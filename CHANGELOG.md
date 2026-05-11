@@ -4,6 +4,52 @@ All notable changes to the Allsky Companion App will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-05-11
+### Added
+- **Sky-Condition Push Alerts**: New "Sky alerts" toggle in the drawer (off by
+  default). When on, you get a single push the moment tonight's viewing
+  rating jumps from POOR/FAIR up to GOOD/EXCELLENT — no spam on slightly
+  improved nights, no quiet hours to configure. Tapping the notification
+  opens the app and animates straight to the Best Viewing card with a brief
+  highlight. Long-press the toggle to fire a sample notification for testing.
+  First-time enable also kicks off a one-off forecast refresh so you're not
+  waiting up to three hours for the next periodic worker.
+- **Sunset-Anchored Night Rating**: New 4-level rating (POOR / FAIR / GOOD /
+  EXCELLENT) computed over the 10 hours after local sunset using OWM's own
+  sunset timestamp, so high-latitude users with 23:00 sunsets aren't
+  penalised by a fixed 21:00–05:00 window. Rain, snow and thunder hard-cap
+  the rating to POOR.
+- **Notification-Specific App Icon**: New status-bar drawable (crescent moon
+  + sparkle) replaces the generic compass that Android was tinting white.
+
+### Changed
+- **Focus Screen Polish**: The "First time here?" help card now appears
+  immediately under the Enable toggle so new users see the v3AF guide link
+  before scrolling. SAVE became SAVE & TEST: on green, the credential
+  fields fold away into a one-line "CONNECTED — pi@allsky-pi" chip with a
+  small EDIT button; on red, the editor stays open with the failure reason.
+  Re-entering the screen auto-probes silently so the chip always reflects
+  the live state, not a stale form. Jog buttons are now 72 dp arrow-only
+  with the caption beneath, so the label can never wrap onto a second line.
+  Move-result feedback gained matching green/red status pills with check /
+  error icons.
+- **Notification Channel Description**: Now reads "Heads-up when tonight's
+  viewing conditions improve" rather than the old "Alerts for clear sky
+  conditions" — accurate to the new improvement-only trigger.
+
+### Fixed
+- **Notification Deep-Link Lost on Warm Start**: The old "Clear Skies
+  Tonight" notification used `FLAG_ACTIVITY_NEW_TASK | CLEAR_TASK`, which
+  tore down the running activity and forced a cold start — losing scroll
+  position and any open dialogs. The new improvement notification uses
+  `SINGLE_TOP | CLEAR_TOP` against a `launchMode="singleTop"` activity, so
+  taps land on the existing instance and reach `onNewIntent` cleanly.
+- **Notification Spam on Every Worker Run**: The previous worker fired a
+  "Clear Skies Tonight!" notification on **every** 3-hour run whenever the
+  next forecast point happened to be below 20% clouds, regardless of
+  whether anything had actually changed. Removed; the improvement-only
+  detector is now the single notification path.
+
 ## [2.2.0] - 2026-05-11
 ### Added
 - **Optional Focus-Motor Feature**: New "Focus Motor" screen for users who

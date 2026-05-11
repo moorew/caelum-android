@@ -37,6 +37,16 @@ class UserPreferences(private val context: Context) {
         private val FOCUS_HTTP_ENDPOINT = stringPreferencesKey("focus_http_endpoint")
         private val FOCUS_DEFAULT_STEPS = intPreferencesKey("focus_default_steps")
 
+        // ----- Sky-condition push alerts (off by default) -----
+        // The user opts in via the drawer toggle; when on, the WeatherWorker
+        // fires a single notification on the day tonight's rating transitions
+        // from POOR/FAIR up to GOOD/EXCELLENT. LAST_NIGHT_RATING is encoded
+        // as "YYYY-MM-DD:RATING" so a worker run on day N can't mistakenly
+        // suppress an alert when day N+1's first-of-day rating reading is
+        // higher than yesterday's final reading.
+        private val SKY_ALERTS_ENABLED = booleanPreferencesKey("sky_alerts_enabled")
+        private val LAST_NIGHT_RATING = stringPreferencesKey("last_night_rating")
+
         // v2 (2.2.0): moves MOON to the bottom — feedback was that the big moon
         // disc was crowding out weather and Best Viewing Night, which are the
         // modules most users glance at first. Bump this whenever the canonical
@@ -185,6 +195,31 @@ class UserPreferences(private val context: Context) {
 
     suspend fun getLastNotificationDate(): String = withContext(Dispatchers.IO) {
         context.dataStore.data.first()[LAST_NOTIFICATION_DATE] ?: ""
+    }
+
+    // -------------------- Sky-condition alerts --------------------
+
+    fun getSkyAlertsEnabledFlow(): Flow<Boolean> {
+        return context.dataStore.data.map { it[SKY_ALERTS_ENABLED] ?: false }
+    }
+
+    suspend fun isSkyAlertsEnabled(): Boolean = withContext(Dispatchers.IO) {
+        context.dataStore.data.first()[SKY_ALERTS_ENABLED] ?: false
+    }
+
+    suspend fun setSkyAlertsEnabled(enabled: Boolean) {
+        context.dataStore.edit { p -> p[SKY_ALERTS_ENABLED] = enabled }
+    }
+
+    /** Returns Pair(date, ratingName) or null if nothing recorded yet. */
+    suspend fun getLastNightRating(): Pair<String, String>? = withContext(Dispatchers.IO) {
+        val raw = context.dataStore.data.first()[LAST_NIGHT_RATING] ?: return@withContext null
+        val parts = raw.split(":", limit = 2)
+        if (parts.size != 2) null else parts[0] to parts[1]
+    }
+
+    suspend fun saveLastNightRating(date: String, rating: String) {
+        context.dataStore.edit { p -> p[LAST_NIGHT_RATING] = "$date:$rating" }
     }
 
     suspend fun saveAllskyUrl(url: String) {

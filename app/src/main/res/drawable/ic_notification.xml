@@ -1,0 +1,25 @@
+<!--
+  Notification status-bar icon. Single-colour white silhouette as required by
+  Android — the system tints the foreground for the status bar regardless of
+  the fillColor set here, so the alpha layering is what carries the design.
+  Glyph: crescent moon with a small four-point sparkle, matching the app's
+  astronomy/Allsky theme.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- Crescent: outer disc minus an offset disc, expressed as one closed
+         path (Android vector drawables don't do boolean ops at runtime). -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M14.5,3.5 C9.8,3.5 6,7.3 6,12 C6,16.7 9.8,20.5 14.5,20.5 C16.6,20.5 18.5,19.7 20,18.4 C16.7,18.1 14,15.4 14,12 C14,8.6 16.7,5.9 20,5.6 C18.5,4.3 16.6,3.5 14.5,3.5 Z" />
+
+    <!-- Small sparkle to the upper-left of the moon. Four-point star drawn
+         as a single concave path. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M5.5,5 L6,7 L8,7.5 L6,8 L5.5,10 L5,8 L3,7.5 L5,7 Z" />
+</vector>

@@ -1,6 +1,7 @@
 package de.astronarren.allsky.ui
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -30,19 +32,32 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ButtonDefaults
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.runtime.*
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import coil.compose.AsyncImage
+import de.astronarren.allsky.data.SkyRating
 import de.astronarren.allsky.ui.components.*
+import de.astronarren.allsky.utils.NotificationHelper
+import de.astronarren.allsky.workers.WeatherWorker
 import de.astronarren.allsky.data.UserPreferences
 import de.astronarren.allsky.data.WeatherData
 import de.astronarren.allsky.viewmodel.*
@@ -72,12 +87,52 @@ fun MainScreen(
     imageViewerViewModel: ImageViewerViewModel,
     liveImageViewModel: LiveImageViewModel,
     languageManager: LanguageManager,
+    /**
+     * When non-null, MainScreen scrolls the matching layout module into view
+     * and briefly highlights it. Set by notification deep links (see
+     * [de.astronarren.allsky.utils.NotificationHelper.EXTRA_SCROLL_TO]).
+     * The owner clears it via [onScrollTargetConsumed] once we've acted.
+     */
+    scrollTarget: String? = null,
+    onScrollTargetConsumed: () -> Unit = {},
 ) {
     var isSettingsOpen by remember { mutableStateOf(false) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
     var isRefreshing by remember { mutableStateOf(false) }
+
+    // Y-offset (in scroll-content pixels) of each layout module as it lays
+    // out. Populated by Modifier.onPlaced on each module's outer container;
+    // consumed by the deep-link scroll-to effect below.
+    val moduleOffsets = remember { mutableStateMapOf<String, Int>() }
+    // Name of the module currently being pulsed after a deep-link. Cleared
+    // automatically after a short hold.
+    var highlightedModule by remember { mutableStateOf<String?>(null) }
+
+    // Deep-link reaction. We re-attempt scrolling on offset changes so the
+    // initial composition (which fires before the cards have measured) can
+    // still land on the right card once layout settles.
+    LaunchedEffect(scrollTarget, moduleOffsets[scrollTarget]) {
+        val target = scrollTarget ?: return@LaunchedEffect
+        val y = moduleOffsets[target] ?: return@LaunchedEffect
+        scrollState.animateScrollTo(y)
+        highlightedModule = target
+        // Consume *after* the scroll so the caller doesn't re-trigger on
+        // recomposition. The highlight teardown runs in the separate effect
+        // below so it survives this effect being cancelled.
+        onScrollTargetConsumed()
+    }
+
+    // Hold the highlight ~1.6 s after a deep-link hit, then fade back. Lives
+    // in its own effect keyed on highlightedModule so it isn't cancelled
+    // when scrollTarget is cleared above.
+    LaunchedEffect(highlightedModule) {
+        if (highlightedModule != null) {
+            delay(1600)
+            highlightedModule = null
+        }
+    }
     
     val weatherUiState by weatherViewModel.uiState.collectAsStateWithLifecycle()
     val allskyUiState by allskyViewModel.uiState.collectAsStateWithLifecycle()
@@ -91,6 +146,17 @@ fun MainScreen(
     val allskyUrl by userPreferences.getAllskyUrlFlow().collectAsStateWithLifecycle(initialValue = "")
     val stationName by userPreferences.getStationNameFlow().collectAsStateWithLifecycle(initialValue = "")
     val apiKey by userPreferences.getApiKeyFlow().collectAsStateWithLifecycle(initialValue = "")
+    val skyAlertsEnabled by userPreferences.getSkyAlertsEnabledFlow().collectAsStateWithLifecycle(initialValue = false)
+
+    // Runtime POST_NOTIFICATIONS permission. We launch the system prompt
+    // the first time the user flips the alerts toggle ON. If denied, the
+    // toggle stays on but NotificationHelper.canPost() silently no-ops —
+    // we don't pester the user. Re-enabling won't re-prompt either; the
+    // system shows our request only when it would actually pop the dialog.
+    val context = LocalContext.current
+    val notifPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { /* result intentionally ignored — see comment above */ }
 
     var currentVideo by remember { mutableStateOf<String?>(null) }
     var paletteColors by remember { mutableStateOf<List<Color>?>(null) }
@@ -107,6 +173,40 @@ fun MainScreen(
         drawerContent = {
             SettingsPanel(
                 isOpen = isSettingsOpen,
+                skyAlertsEnabled = skyAlertsEnabled,
+                onSkyAlertsToggle = { enabled ->
+                    scope.launch { userPreferences.setSkyAlertsEnabled(enabled) }
+                    // Prompt for POST_NOTIFICATIONS the first time alerts
+                    // are switched ON (no-op on API < 33 — there's no
+                    // runtime permission to request).
+                    if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        val granted = ContextCompat.checkSelfPermission(
+                            context, Manifest.permission.POST_NOTIFICATIONS
+                        ) == PackageManager.PERMISSION_GRANTED
+                        if (!granted) {
+                            notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    }
+                    // Kick off an immediate one-off WeatherWorker run when
+                    // the user enables alerts. Without this they'd wait up
+                    // to the periodic worker's full interval (3h) before
+                    // anything could fire — confusing first-run experience.
+                    // The periodic schedule from MainActivity is unchanged.
+                    if (enabled) {
+                        val req = OneTimeWorkRequestBuilder<WeatherWorker>().build()
+                        WorkManager.getInstance(context).enqueue(req)
+                    }
+                },
+                onSkyAlertsTestFire = {
+                    // Hand-rolled sample improvement so users can validate
+                    // the deep-link + Best Viewing highlight without the
+                    // weather actually changing.
+                    NotificationHelper(context).showSkyRatingImprovedNotification(
+                        previousLabel = SkyRating.FAIR.label,
+                        newLabel = SkyRating.EXCELLENT.label,
+                        cloudCoverPct = 12,
+                    )
+                },
                 onDismiss = {
                     scope.launch {
                         drawerState.close()
@@ -369,17 +469,33 @@ fun MainScreen(
                                 "BEST_VIEWING" -> {
                                     val bestNight = weatherViewModel.getBestViewingNight()
                                     if (bestNight != null) {
-                                        de.astronarren.allsky.ui.components.GlassCard(
+                                        val highlightTarget = highlightedModule == "BEST_VIEWING"
+                                        val highlightColor by animateColorAsState(
+                                            targetValue = if (highlightTarget)
+                                                Color(0xFF69F0AE) // soft mint, matches the connection chip
+                                            else Color.Transparent,
+                                            animationSpec = tween(durationMillis = 500),
+                                            label = "bestViewingHighlight"
+                                        )
+                                        Box(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                                            cornerRadius = 28.dp,
-                                            elevated = true
+                                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                                                .onPlaced { coords ->
+                                                    moduleOffsets["BEST_VIEWING"] =
+                                                        coords.positionInParent().y.toInt()
+                                                }
+                                                .border(2.dp, highlightColor, RoundedCornerShape(28.dp))
                                         ) {
-                                            Column(
-                                                modifier = Modifier.padding(24.dp).fillMaxWidth(),
-                                                horizontalAlignment = Alignment.CenterHorizontally
+                                            de.astronarren.allsky.ui.components.GlassCard(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                cornerRadius = 28.dp,
+                                                elevated = true
                                             ) {
+                                                Column(
+                                                    modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                                                    horizontalAlignment = Alignment.CenterHorizontally
+                                                ) {
                                                 Text(
                                                     text = "BEST VIEWING NIGHT",
                                                     style = MaterialTheme.typography.labelMedium.copy(
@@ -403,6 +519,7 @@ fun MainScreen(
                                                     ),
                                                     color = Color.White.copy(alpha = 0.55f)
                                                 )
+                                                }
                                             }
                                         }
                                     }

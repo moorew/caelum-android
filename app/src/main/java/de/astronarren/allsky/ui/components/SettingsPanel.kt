@@ -1,7 +1,9 @@
 package de.astronarren.allsky.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -11,6 +13,7 @@ import androidx.compose.material.icons.filled.FilterHdr
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storm
@@ -35,7 +38,15 @@ import de.astronarren.allsky.ui.theme.NightPurple
 fun SettingsPanel(
     isOpen: Boolean,
     onDismiss: () -> Unit,
-    onNavigate: (String) -> Unit
+    onNavigate: (String) -> Unit,
+    // Sky-alert toggle — defaulted so existing call sites compile, but the
+    // main screen wires this to the persisted user preference.
+    skyAlertsEnabled: Boolean = false,
+    onSkyAlertsToggle: (Boolean) -> Unit = {},
+    // Long-press handler on the alerts row — fires a sample notification so
+    // users can validate the deep-link + highlight without waiting for the
+    // weather to actually change.
+    onSkyAlertsTestFire: () -> Unit = {},
 ) {
     if (!isOpen) return
 
@@ -99,6 +110,23 @@ fun SettingsPanel(
                 PanelItem("Focus Motor", Icons.Default.CenterFocusStrong) { onNavigate("focus") }
             }
 
+            Section("Alerts") {
+                // Single switch — off by default. The actual transition
+                // detection lives in WeatherWorker; this just flips the
+                // preference flag the worker reads each 3-hour run.
+                ToggleItem(
+                    title = "Sky alerts",
+                    subtitle = if (skyAlertsEnabled)
+                        "On — you'll be notified when tonight's rating improves. Long-press to send a test."
+                    else
+                        "Off — no push notifications about viewing conditions.",
+                    icon = Icons.Default.NotificationsActive,
+                    checked = skyAlertsEnabled,
+                    onToggle = onSkyAlertsToggle,
+                    onLongPress = onSkyAlertsTestFire,
+                )
+            }
+
             Section("System") {
                 PanelItem("Settings", Icons.Default.Settings) { onNavigate("settings") }
                 PanelItem("About", Icons.Default.Info) { onNavigate("about") }
@@ -121,6 +149,64 @@ private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) 
         modifier = Modifier.padding(start = 8.dp, top = 16.dp, bottom = 6.dp)
     )
     Column(content = content)
+}
+
+/**
+ * Drawer row with a trailing [Switch] — used for boolean preferences that
+ * the user should be able to flip without leaving the drawer. The row
+ * itself is clickable as a larger tap target than the switch thumb, and
+ * long-pressable for an optional secondary action (used here to fire a
+ * sample sky-alert notification).
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ToggleItem(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    checked: Boolean,
+    onToggle: (Boolean) -> Unit,
+    onLongPress: (() -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+            .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(14.dp))
+            .combinedClickable(
+                onClick = { onToggle(!checked) },
+                onLongClick = onLongPress,
+            )
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = title,
+            tint = Color.White.copy(alpha = 0.85f),
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                color = Color.White
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White.copy(alpha = 0.55f),
+                maxLines = 2,
+            )
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        Switch(
+            checked = checked,
+            onCheckedChange = onToggle,
+        )
+    }
 }
 
 @Composable

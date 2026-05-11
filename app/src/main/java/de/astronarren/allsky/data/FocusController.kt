@@ -43,6 +43,98 @@ class FocusController(
         }
     }
 
+    /**
+     * Non-destructive handshake used by the Focus settings UI to surface a
+     * green/red "connected" status. SSH opens a session and runs `whoami &&
+     * hostname`; HTTP issues a HEAD against the base of the configured URL.
+     * Neither path moves the focuser.
+     */
+    suspend fun testConnection(settings: FocusSettings): Result {
+        return when (settings.transport) {
+            FocusTransport.SSH -> testSsh(settings)
+            FocusTransport.HTTP -> testHttp(settings)
+        }
+    }
+
+    private suspend fun testSsh(settings: FocusSettings): Result = withContext(Dispatchers.IO) {
+        if (settings.host.isBlank()) {
+            return@withContext Result(false, "Host is empty.")
+        }
+        val jsch = JSch()
+        val session = try {
+            jsch.getSession(
+                settings.username.ifBlank { "pi" },
+                settings.host,
+                if (settings.port > 0) settings.port else 22
+            )
+        } catch (e: Exception) {
+            return@withContext Result(false, e.message ?: "Could not create SSH session.")
+        }
+        session.setPassword(settings.password)
+        session.setConfig("StrictHostKeyChecking", "no")
+        session.setConfig("PreferredAuthentications", "password,keyboard-interactive,publickey")
+        session.setServerAliveInterval(15_000)
+        try {
+            session.connect(10_000)
+            val channel = session.openChannel("exec") as ChannelExec
+            channel.setCommand("whoami && hostname")
+            val stdout = ByteArrayOutputStream()
+            val stderr = ByteArrayOutputStream()
+            channel.outputStream = stdout
+            channel.setErrStream(stderr)
+            channel.connect(8_000)
+            val waitDeadline = System.currentTimeMillis() + 8_000
+            while (!channel.isClosed && System.currentTimeMillis() < waitDeadline) {
+                Thread.sleep(50)
+            }
+            val exit = channel.exitStatus
+            channel.disconnect()
+            val lines = stdout.toString().trim().lines().filter { it.isNotBlank() }
+            val identity = when (lines.size) {
+                0 -> "${settings.username.ifBlank { "pi" }}@${settings.host}"
+                1 -> "${lines[0]}@${settings.host}"
+                else -> "${lines[0]}@${lines[1]}"
+            }
+            Result(
+                success = exit == 0,
+                output = if (exit == 0) identity else (stderr.toString().trim().ifBlank { "Exit $exit" })
+            )
+        } catch (e: Exception) {
+            Result(false, e.message ?: "SSH connection failed")
+        } finally {
+            session.disconnect()
+        }
+    }
+
+    private suspend fun testHttp(settings: FocusSettings): Result = withContext(Dispatchers.IO) {
+        val template = settings.httpEndpoint
+        if (template.isBlank()) {
+            return@withContext Result(false, "HTTP endpoint is empty.")
+        }
+        // Strip placeholders for the probe — we just want to know the host is
+        // reachable, not actually drive the motor.
+        val probeUrl = template
+            .replace("{direction}", "forward")
+            .replace("{steps}", "0")
+        val parsed = probeUrl.toHttpUrlOrNull()
+            ?: return@withContext Result(false, "Endpoint is not a valid URL: $probeUrl")
+        val base = parsed.newBuilder()
+            .encodedPath("/")
+            .query(null)
+            .build()
+        try {
+            val request = Request.Builder().url(base).head().build()
+            okHttpClient.newCall(request).execute().use { resp ->
+                Result(
+                    success = resp.code < 500,
+                    output = "${parsed.host}:${parsed.port} • HTTP ${resp.code}"
+                )
+            }
+        } catch (e: Exception) {
+            Result(false, e.message ?: "HTTP probe failed")
+        }
+    }
+
     private suspend fun moveOverSsh(settings: FocusSettings, direction: Direction, steps: Int): Result =
         withContext(Dispatchers.IO) {
             if (settings.host.isBlank()) {

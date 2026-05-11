@@ -1,5 +1,6 @@
 package de.astronarren.allsky
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -23,6 +24,7 @@ import de.astronarren.allsky.viewmodel.*
 import de.astronarren.allsky.data.WeatherRepository
 import de.astronarren.allsky.data.AllskyRepository
 import de.astronarren.allsky.utils.LanguageManager
+import de.astronarren.allsky.utils.NotificationHelper
 import de.astronarren.allsky.workers.WeatherWorker
 import java.util.concurrent.TimeUnit
 
@@ -46,6 +48,14 @@ class MainActivity : ComponentActivity() {
     private lateinit var setupViewModel: SetupViewModel
     private lateinit var liveImageViewModel: LiveImageViewModel
     private lateinit var languageViewModel: LanguageViewModel
+
+    /**
+     * Set by notification PendingIntents (see [NotificationHelper.EXTRA_SCROLL_TO]).
+     * MainScreen consumes the value on next composition and clears it. We
+     * keep this as a top-level mutable state so cold-start (intent in
+     * onCreate) and warm-start (intent in onNewIntent) share one path.
+     */
+    private val scrollTarget = androidx.compose.runtime.mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -111,7 +121,11 @@ class MainActivity : ComponentActivity() {
         Coil.setImageLoader(imageLoader)
 
         scheduleWeatherWorker()
-        
+
+        // Capture any deep-link extra delivered on cold start. Warm starts
+        // go through onNewIntent below.
+        scrollTarget.value = intent?.getStringExtra(NotificationHelper.EXTRA_SCROLL_TO)
+
         enableEdgeToEdge()
         setContent {
             AllskyTheme {
@@ -150,6 +164,8 @@ class MainActivity : ComponentActivity() {
                                     imageViewerViewModel = imageViewerViewModel,
                                     liveImageViewModel = liveImageViewModel,
                                     languageManager = languageManager,
+                                    scrollTarget = scrollTarget.value,
+                                    onScrollTargetConsumed = { scrollTarget.value = null },
                                 )
                             }
                             composable("layout_editor") {
@@ -198,6 +214,19 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * Warm-start path for notification deep links. Without this, tapping
+     * the notification while the activity is already running would just
+     * bring it to the front with no extras delivered to MainScreen.
+     */
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent?.getStringExtra(NotificationHelper.EXTRA_SCROLL_TO)?.let {
+            scrollTarget.value = it
         }
     }
 
