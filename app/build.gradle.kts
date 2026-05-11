@@ -1,8 +1,37 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
 }
+
+// Release signing config. Reads from environment variables (set in the
+// android-release.yml workflow) or, when building locally, falls back to
+// `keystore.properties` at the repo root (gitignored). If no keystore is
+// available the release build is still possible — Android Gradle Plugin will
+// just emit an unsigned APK and the existing signing-step in CI will sign it
+// with a throwaway key (legacy behaviour, kept as a safety net).
+val keystoreFromEnv: File? = System.getenv("KEYSTORE_FILE")?.let(::File)
+val keystorePropsFile = rootProject.file("keystore.properties")
+val localKeystoreProps: Properties? = if (keystorePropsFile.exists()) {
+    Properties().apply { load(FileInputStream(keystorePropsFile)) }
+} else null
+
+fun secret(envName: String, propName: String): String? =
+    System.getenv(envName) ?: localKeystoreProps?.getProperty(propName)
+
+val resolvedStorePassword = secret("KEYSTORE_PASSWORD", "storePassword")
+val resolvedKeyAlias = secret("KEY_ALIAS", "keyAlias")
+val resolvedKeyPassword = secret("KEY_PASSWORD", "keyPassword")
+val resolvedKeystoreFile: File? = keystoreFromEnv
+    ?: localKeystoreProps?.getProperty("storeFile")?.let { rootProject.file(it) }
+
+val signingReady = resolvedKeystoreFile?.exists() == true &&
+    !resolvedStorePassword.isNullOrBlank() &&
+    !resolvedKeyAlias.isNullOrBlank() &&
+    !resolvedKeyPassword.isNullOrBlank()
 
 android {
     namespace = "de.astronarren.allsky"
@@ -12,12 +41,28 @@ android {
         applicationId = "de.astronarren.allsky"
         minSdk = 29
         targetSdk = 35
-        versionCode = 52
-        versionName = "2.1.0"
+        versionCode = 53
+        versionName = "2.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
+        }
+    }
+
+    signingConfigs {
+        if (signingReady) {
+            create("release") {
+                storeFile = resolvedKeystoreFile
+                storePassword = resolvedStorePassword
+                keyAlias = resolvedKeyAlias
+                keyPassword = resolvedKeyPassword
+                // Both v1 + v2 signing schemes — needed for compatibility
+                // with Android 9 (P) and below alongside modern installs.
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
         }
     }
 
@@ -28,6 +73,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (signingReady) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     
@@ -127,4 +175,10 @@ dependencies {
 
     // Palette for dynamic theming
     implementation("androidx.palette:palette-ktx:1.0.0")
+
+    // SSH client for the optional focus-motor feature. The maintained mwiede
+    // fork of JSch is what we want here — pure-Java, ~300 KB, supports modern
+    // KEX/HostKey algorithms (ed25519, curve25519-sha256) that the original
+    // unmaintained JSch chokes on against current OpenSSH defaults.
+    implementation("com.github.mwiede:jsch:0.2.21")
 }

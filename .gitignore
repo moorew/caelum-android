@@ -24,6 +24,11 @@ render.experimental.xml
 *.jks
 *.keystore
 
+# Local keystore staging area (NEVER commit — contents are mirrored into
+# GitHub Secrets and live only on the developer machine).
+.private_keystore/
+keystore.properties
+
 # Google Services (e.g. APIs or Firebase)
 google-services.json
 

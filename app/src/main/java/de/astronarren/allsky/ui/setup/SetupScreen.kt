@@ -129,6 +129,13 @@ fun SetupScreen(
                         4 -> LocationStep(
                             currentLat = uiState.latitude,
                             currentLon = uiState.longitude,
+                            query = uiState.locationQuery,
+                            results = uiState.locationResults,
+                            isSearching = uiState.locationLoading,
+                            searchError = uiState.locationError,
+                            selectedPlaceLabel = uiState.selectedPlaceLabel,
+                            onQueryChange = { viewModel.updateLocationQuery(it) },
+                            onPickResult = { viewModel.pickGeocodedResult(it) },
                             onLatChange = { viewModel.updateLatitude(it) },
                             onLonChange = { viewModel.updateLongitude(it) },
                             onComplete = { viewModel.completeSetup() }
@@ -376,16 +383,24 @@ private fun UrlStep(
 private fun LocationStep(
     currentLat: String,
     currentLon: String,
+    query: String,
+    results: List<de.astronarren.allsky.data.GeocodingResult>,
+    isSearching: Boolean,
+    searchError: String?,
+    selectedPlaceLabel: String?,
+    onQueryChange: (String) -> Unit,
+    onPickResult: (de.astronarren.allsky.data.GeocodingResult) -> Unit,
     onLatChange: (String) -> Unit,
     onLonChange: (String) -> Unit,
     onComplete: () -> Unit
 ) {
     val context = LocalContext.current
-    var latInput by remember { mutableStateOf(currentLat) }
-    var lonInput by remember { mutableStateOf(currentLon) }
-    
+    var showManual by remember { mutableStateOf(currentLat.isNotEmpty() && selectedPlaceLabel == null) }
+    var latInput by remember(currentLat) { mutableStateOf(currentLat) }
+    var lonInput by remember(currentLon) { mutableStateOf(currentLon) }
+
     val locationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
-    
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -403,98 +418,248 @@ private fun LocationStep(
         }
     }
 
+    val finishEnabled = latInput.isNotBlank() && lonInput.isNotBlank()
+
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
-            text = "LOCATION",
+            text = "STATION LOCATION",
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black, letterSpacing = 2.sp),
             color = Color.White
         )
-        
-        Spacer(modifier = Modifier.height(24.dp))
-        
-        Row(
+
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Used for weather, Best Viewing Night, and moon altitude. Search a town or use GPS — manual coords are optional.",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White.copy(alpha = 0.65f),
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // ---- Search field ----
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            label = { Text("Search city or place") },
+            placeholder = { Text("e.g. Edinburgh, Mauna Kea") },
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            OutlinedTextField(
-                value = latInput,
-                onValueChange = { 
-                    latInput = it
-                    onLatChange(it)
-                },
-                label = { Text("Latitude") },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                shape = RoundedCornerShape(16.dp),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
-                    focusedBorderColor = Color.White,
-                    unfocusedLabelColor = Color.White.copy(alpha = 0.6f),
-                    focusedLabelColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedTextColor = Color.White
-                )
-            )
-            OutlinedTextField(
-                value = lonInput,
-                onValueChange = { 
-                    lonInput = it
-                    onLonChange(it)
-                },
-                label = { Text("Longitude") },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                shape = RoundedCornerShape(16.dp),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
-                    focusedBorderColor = Color.White,
-                    unfocusedLabelColor = Color.White.copy(alpha = 0.6f),
-                    focusedLabelColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedTextColor = Color.White
-                )
-            )
-        }
-        
-        Spacer(modifier = Modifier.height(12.dp))
-        
-        TextButton(
-            onClick = {
-                if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-                    locationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
-                        .addOnSuccessListener { location ->
-                            location?.let {
-                                latInput = it.latitude.toString()
-                                lonInput = it.longitude.toString()
-                                onLatChange(latInput)
-                                onLonChange(lonInput)
-                            }
-                        }
-                } else {
-                    permissionLauncher.launch(arrayOf(
-                        Manifest.permission.ACCESS_FINE_LOCATION,
-                        Manifest.permission.ACCESS_COARSE_LOCATION
-                    ))
+            singleLine = true,
+            shape = RoundedCornerShape(16.dp),
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
+            trailingIcon = {
+                if (isSearching) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = Color.White.copy(alpha = 0.7f)
+                    )
                 }
             },
-            colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
-        ) {
-            Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("GET CURRENT LOCATION")
+            colors = OutlinedTextFieldDefaults.colors(
+                unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
+                focusedBorderColor = Color.White,
+                unfocusedLabelColor = Color.White.copy(alpha = 0.6f),
+                focusedLabelColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedTextColor = Color.White,
+                focusedLeadingIconColor = Color.White,
+                unfocusedLeadingIconColor = Color.White.copy(alpha = 0.6f),
+            )
+        )
+
+        // ---- Result rows (max 8 from Open-Meteo) ----
+        if (results.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(16.dp))
+                    .padding(vertical = 4.dp)
+            ) {
+                results.forEach { r ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onPickResult(r)
+                                latInput = r.latitude.toString()
+                                lonInput = r.longitude.toString()
+                            }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.LocationOn,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.6f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = r.label,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = Color.White
+                        )
+                    }
+                }
+            }
         }
-        
+
+        if (searchError != null) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = searchError,
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFFFFAB91)
+            )
+        }
+
+        // ---- Selected place confirmation ----
+        if (selectedPlaceLabel != null) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0xFF00C853).copy(alpha = 0.15f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00E676).copy(alpha = 0.5f))
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Check,
+                        contentDescription = null,
+                        tint = Color(0xFF69F0AE),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = selectedPlaceLabel,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                            color = Color.White
+                        )
+                        Text(
+                            text = "${latInput.take(8)}, ${lonInput.take(8)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // ---- GPS + manual toggles ----
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            TextButton(
+                onClick = {
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                        locationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+                            .addOnSuccessListener { location ->
+                                location?.let {
+                                    latInput = it.latitude.toString()
+                                    lonInput = it.longitude.toString()
+                                    onLatChange(latInput)
+                                    onLonChange(lonInput)
+                                }
+                            }
+                    } else {
+                        permissionLauncher.launch(arrayOf(
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION
+                        ))
+                    }
+                },
+                colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
+            ) {
+                Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("USE GPS", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Black, letterSpacing = 1.sp))
+            }
+            TextButton(
+                onClick = { showManual = !showManual },
+                colors = ButtonDefaults.textButtonColors(contentColor = Color.White.copy(alpha = 0.75f))
+            ) {
+                Text(
+                    if (showManual) "HIDE MANUAL" else "ENTER MANUALLY",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+                )
+            }
+        }
+
+        if (showManual) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedTextField(
+                    value = latInput,
+                    onValueChange = {
+                        latInput = it
+                        onLatChange(it)
+                    },
+                    label = { Text("Latitude") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
+                        focusedBorderColor = Color.White,
+                        unfocusedLabelColor = Color.White.copy(alpha = 0.6f),
+                        focusedLabelColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedTextColor = Color.White
+                    )
+                )
+                OutlinedTextField(
+                    value = lonInput,
+                    onValueChange = {
+                        lonInput = it
+                        onLonChange(it)
+                    },
+                    label = { Text("Longitude") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
+                        focusedBorderColor = Color.White,
+                        unfocusedLabelColor = Color.White.copy(alpha = 0.6f),
+                        focusedLabelColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedTextColor = Color.White
+                    )
+                )
+            }
+        }
+
         Spacer(modifier = Modifier.height(32.dp))
-        
+
         Button(
             onClick = onComplete,
+            enabled = finishEnabled,
             modifier = Modifier.fillMaxWidth().height(56.dp),
             shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color.White,
+                contentColor = Color.Black,
+                disabledContainerColor = Color.White.copy(alpha = 0.15f),
+                disabledContentColor = Color.White.copy(alpha = 0.5f),
+            )
         ) {
-            Text("FINISH", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Black))
+            Text(
+                if (finishEnabled) "FINISH" else "SEARCH OR ENTER COORDS",
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Black)
+            )
         }
     }
 }

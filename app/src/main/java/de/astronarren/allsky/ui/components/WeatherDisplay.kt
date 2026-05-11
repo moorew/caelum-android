@@ -34,12 +34,22 @@ fun WeatherDisplay(
             .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
         when {
-            uiState.isLoading -> {
+            uiState.isLoading && uiState.weatherData == null -> {
+                // Only show the full-height spinner on the very first load. On
+                // subsequent refreshes we keep the previous data visible to
+                // avoid a jarring flicker every 3 hours.
                 Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                 }
             }
-            
+
+            uiState.weatherData == null && uiState.error != null -> {
+                // Surface the underlying error instead of silently rendering an
+                // empty Box. Without this the user has no idea their station
+                // coordinates are missing or the API key was rejected.
+                WeatherErrorCard(error = uiState.error)
+            }
+
             uiState.weatherData != null -> {
                 val (city, forecasts) = uiState.weatherData
                 Column {
@@ -115,7 +125,13 @@ fun WeatherDisplay(
                             horizontalArrangement = Arrangement.SpaceEvenly,
                             modifier = Modifier.fillMaxWidth().padding(24.dp)
                         ) {
-                            items(forecasts.filterIndexed { index, _ -> index % 8 == 0 }.take(5)) { dayWeather ->
+                            // `forecasts` is already daily-deduped by WeatherViewModel
+                            // (group-by-day, first entry per day). Slicing by index % 8
+                            // was a leftover from when this list held raw 3-hour points
+                            // — applied to daily entries it collapses the strip to a
+                            // single day, which is why the 5-day forecast appeared
+                            // empty.
+                            items(forecasts.take(5)) { dayWeather ->
                                 DayForecast(dayWeather)
                             }
                         }
@@ -249,4 +265,53 @@ private fun formatDay(timestamp: Long): String {
 
 private fun String.capitalize(): String {
     return this.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+}
+
+@Composable
+private fun WeatherErrorCard(error: String) {
+    // Friendly text for known internal error codes; everything else passes
+    // through verbatim so transient network errors are still visible.
+    val (title, body) = when {
+        error == "weather_api_required" ->
+            "WEATHER API KEY MISSING" to "Add your OpenWeather API key in Settings to load forecasts."
+        error.contains("Station coordinates", ignoreCase = true) ->
+            "STATION LOCATION MISSING" to "Set your station latitude and longitude in Settings (or onboarding) so we know which patch of sky to forecast."
+        error.contains("401", ignoreCase = true) ->
+            "WEATHER API REJECTED" to "OpenWeather returned 401 Unauthorized — check your API key in Settings."
+        error.contains("Unable to resolve host", ignoreCase = true) ||
+        error.contains("timeout", ignoreCase = true) ->
+            "WEATHER OFFLINE" to "Couldn't reach OpenWeather. Check the device's connection and try refreshing."
+        else ->
+            "WEATHER UNAVAILABLE" to error
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White.copy(alpha = 0.05f)
+        ),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+    ) {
+        Column(
+            modifier = Modifier.padding(24.dp).fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 2.sp
+                ),
+                color = Color.White.copy(alpha = 0.7f)
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = body,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.55f),
+                textAlign = TextAlign.Center
+            )
+        }
+    }
 }

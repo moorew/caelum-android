@@ -36,11 +36,16 @@ fun MoonPhaseDisplay() {
     val daysUntilNewMoon = remember { MoonPhaseCalculator.getDaysUntilNewMoon() }
     val fraction = remember { MoonPhaseCalculator.getCurrentMoonCycleFraction() }
     
+    // Compact horizontal layout — the previous 180 dp disc + tall stat column
+    // was the heaviest card on the home screen. The user feedback was that it
+    // pushed weather and Best Viewing too far down. Now: 96 dp disc on the
+    // left, phase name + stats stacked on the right, all in roughly half the
+    // vertical space.
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(28.dp),
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
             containerColor = Color.White.copy(alpha = 0.06f)
         ),
@@ -49,26 +54,16 @@ fun MoonPhaseDisplay() {
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Column(
+        Row(
             modifier = Modifier
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = stringResource(R.string.moon_phase).uppercase(),
-                style = MaterialTheme.typography.labelLarge.copy(
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 2.sp
-                ),
-                color = Color.Yellow.copy(alpha = 0.8f)
-            )
-            
-            Spacer(modifier = Modifier.height(24.dp))
-
             // Moon with Image and Shadow Mask
             Box(
                 modifier = Modifier
-                    .size(180.dp)
+                    .size(96.dp)
                     .clip(CircleShape)
                     .background(Color.Black),
                 contentAlignment = Alignment.Center
@@ -111,48 +106,55 @@ fun MoonPhaseDisplay() {
                 }
             }
             
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // Moon Phase Name
-            Text(
-                text = stringResource(moonPhase.stringResId).uppercase(),
-                style = MaterialTheme.typography.headlineMedium.copy(
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = (-1).sp
-                ),
-                color = Color.White
-            )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "ILLUMINATION",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = Color.White.copy(alpha = 0.6f)
-                    )
-                    Text(
-                        text = "%.1f%%".format(illumination),
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold),
-                        color = Color.White
-                    )
-                }
-                
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "NEXT NEW MOON",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = Color.White.copy(alpha = 0.6f)
-                    )
-                    Text(
-                        text = "IN ${daysUntilNewMoon.roundToInt()} DAYS",
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold),
-                        color = Color.White
-                    )
+            Spacer(modifier = Modifier.width(20.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.moon_phase).uppercase(),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 2.sp
+                    ),
+                    color = Color.Yellow.copy(alpha = 0.8f)
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(moonPhase.stringResId).uppercase(),
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = (-0.5).sp
+                    ),
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Column {
+                        Text(
+                            text = "ILLUM",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = Color.White.copy(alpha = 0.5f)
+                        )
+                        Text(
+                            text = "%.0f%%".format(illumination),
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                            color = Color.White
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "NEW MOON",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = Color.White.copy(alpha = 0.5f)
+                        )
+                        Text(
+                            text = "${daysUntilNewMoon.roundToInt()}D",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                            color = Color.White
+                        )
+                    }
                 }
             }
         }

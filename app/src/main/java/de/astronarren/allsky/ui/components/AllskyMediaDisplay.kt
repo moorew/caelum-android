@@ -33,7 +33,9 @@ fun AllskyMediaSection(
     title: String,
     media: List<AllskyMediaUiState>,
     onMediaClick: (AllskyMediaUiState) -> Unit,
-    isVideo: Boolean? = null
+    isVideo: Boolean? = null,
+    isLoading: Boolean = false,
+    error: String? = null,
 ) {
     Column(
         modifier = Modifier
@@ -76,6 +78,26 @@ fun AllskyMediaSection(
         }
 
         if (media.isEmpty()) {
+            // Differentiate three empty states so the user knows whether the
+            // app is still working on it, has hit an error, or has confirmed
+            // there's genuinely nothing for this category yet.
+            val label: String
+            val accent: Color
+            when {
+                isLoading -> {
+                    label = "LOADING…"
+                    accent = Color.White.copy(alpha = 0.55f)
+                }
+                error != null -> {
+                    val short = error.takeIf { it.length < 60 }?.uppercase() ?: "COULDN'T LOAD"
+                    label = "$short — PULL TO REFRESH"
+                    accent = Color(0xFFFFAB91)
+                }
+                else -> {
+                    label = stringResource(R.string.no_content_available).uppercase()
+                    accent = Color.White.copy(alpha = 0.4f)
+                }
+            }
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -95,12 +117,12 @@ fun AllskyMediaSection(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = stringResource(R.string.no_content_available).uppercase(),
+                        text = label,
                         style = MaterialTheme.typography.labelMedium.copy(
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.sp
                         ),
-                        color = Color.White.copy(alpha = 0.4f)
+                        color = accent
                     )
                 }
             }

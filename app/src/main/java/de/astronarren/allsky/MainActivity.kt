@@ -33,6 +33,7 @@ import coil.Coil
 import coil.ImageLoader
 import coil.decode.VideoFrameDecoder
 import de.astronarren.allsky.network.AllskyAuthInterceptor
+import de.astronarren.allsky.ui.focus.FocusScreen
 import de.astronarren.allsky.ui.layout.LayoutEditorScreen
 import de.astronarren.allsky.ui.media.MediaScreen
 import de.astronarren.allsky.ui.settings.SettingsScreen
@@ -88,6 +89,24 @@ class MainActivity : ComponentActivity() {
             .components {
                 add(VideoFrameDecoder.Factory())
             }
+            // Memory + disk cache so a second launch (or a scroll back up the
+            // list) shows thumbnails instantly. 25% of the JVM heap for memory
+            // (Coil's default but stated explicitly so future tuning is
+            // obvious) and a 100 MB disk slab — generous enough to cover a
+            // few weeks of timelapse/keogram thumbs without filling the user's
+            // storage.
+            .memoryCache {
+                coil.memory.MemoryCache.Builder(applicationContext)
+                    .maxSizePercent(0.25)
+                    .build()
+            }
+            .diskCache {
+                coil.disk.DiskCache.Builder()
+                    .directory(applicationContext.cacheDir.resolve("allsky_image_cache"))
+                    .maxSizeBytes(100L * 1024 * 1024)
+                    .build()
+            }
+            .respectCacheHeaders(false) // Allsky portals rarely set sensible cache headers; we control TTL via WorkManager refresh.
             .build()
         Coil.setImageLoader(imageLoader)
 
@@ -163,6 +182,15 @@ class MainActivity : ComponentActivity() {
                             }
                             composable("about") {
                                 AboutScreen(
+                                    onNavigateBack = { navController.popBackStack() }
+                                )
+                            }
+                            composable("focus") {
+                                val focusViewModel: de.astronarren.allsky.viewmodel.FocusViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
+                                    factory = de.astronarren.allsky.viewmodel.FocusViewModelFactory(userPreferences)
+                                )
+                                FocusScreen(
+                                    viewModel = focusViewModel,
                                     onNavigateBack = { navController.popBackStack() }
                                 )
                             }

@@ -4,6 +4,59 @@ All notable changes to the Allsky Companion App will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-05-11
+### Added
+- **Optional Focus-Motor Feature**: New "Focus Motor" screen for users who
+  follow the [v3AF focus-capable Allsky guide](https://www.printables.com/article/allsky-v3af-focus-capable-allsky-VNLB02d).
+  Choose SSH or HTTP transport, set host / credentials / step size (64–1024 +
+  custom), and jog the focuser forward or backward without leaving the app.
+  Help card explains how to use Tailscale tailnet hostnames for remote access
+  with zero in-app SDK integration.
+- **City-Search Onboarding**: Setup step 4 replaces blind lat/long entry with
+  a free-form place search backed by the Open-Meteo geocoder (no API key, no
+  Maps SDK bloat). GPS button + manual lat/long are still available as
+  fallbacks; the selected place is shown as a confirmation chip.
+- **Status Overlay in Viewer**: Full-screen image and video viewers now show
+  a labelled status pill — LOADING / READY / DOWNLOADING / SAVED / ERROR —
+  so the user has feedback while a large timelapse buffers or a download
+  completes.
+- **Stable Release Signing**: Release APKs are now signed with a stable
+  developer-owned keystore via GitHub Secrets. Future updates install in
+  place — no more uninstall/reinstall every release.
+- **Coil Disk + Memory Caches**: Thumbnails are cached on disk (100 MB) and
+  in memory (25% of heap), making repeat scrolls and second launches feel
+  noticeably snappier.
+
+### Changed
+- **Home Layout**: Moon phase moved to the bottom and rebuilt as a compact
+  horizontal card (96 dp disc + stats on the right) — Weather and Best
+  Viewing Night are now the first things you see after the live tile.
+  Existing layouts are reset to the new canonical order on first launch (via
+  a layout-version migration).
+- **Full-Screen Viewer Chrome**: Top bar (station name / URL pill) and burger
+  menu are now hidden whenever a viewer is open, so the X is no longer cut
+  off by the menu and the location nickname doesn't bleed behind the
+  filename. Close / Download replaced with consistent floating round buttons
+  on both image and video viewers.
+
+### Fixed
+- **5-Day Forecast Collapsed to 1 Day**: `WeatherDisplay` was slicing the
+  already-daily-deduped forecast list by `index % 8 == 0`, which kept only
+  index 0 — so the strip rendered a single column instead of five days.
+  Removed the stale slicing.
+- **Weather Errors Rendered Blank**: When the API call failed (bad key,
+  missing coords, network drop) the weather card rendered an empty Box with
+  no feedback. There's now a dedicated error card with human-readable text
+  for each known failure mode.
+- **Timelapses / Meteors / Star Trails Missing**: The portal-listing parser
+  rejected any media URL containing a query string (cache busters, signed
+  links) and required strict filename tokens for keograms/startrails. The
+  parser is now permissive — accepts query strings on real media URLs,
+  unions the portal listing with the direct directory listing per category,
+  and falls back to directory-path detection when the filename token is
+  missing. Per-section error states surface the cause instead of a silent
+  empty list.
+
 ## [2.1.0] - 2026-05-10
 ### Added
 - **Unified Material 3 Design System**: New `Color.kt` with proper M3 surface

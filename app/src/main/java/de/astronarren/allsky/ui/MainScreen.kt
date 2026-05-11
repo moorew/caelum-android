@@ -85,7 +85,7 @@ fun MainScreen(
     val liveImageState by liveImageViewModel.uiState.collectAsStateWithLifecycle()
 
     val mainLayout by userPreferences.getMainLayoutFlow().collectAsStateWithLifecycle(
-        initialValue = listOf("LIVE_VIEW", "BEST_VIEWING", "WEATHER", "MOON", "TIMELAPSES", "METEORS", "IMAGES", "KEOGRAMS", "STARTRAILS")
+        initialValue = listOf("LIVE_VIEW", "BEST_VIEWING", "WEATHER", "TIMELAPSES", "METEORS", "IMAGES", "KEOGRAMS", "STARTRAILS", "MOON")
     )
     
     val allskyUrl by userPreferences.getAllskyUrlFlow().collectAsStateWithLifecycle(initialValue = "")
@@ -94,9 +94,16 @@ fun MainScreen(
 
     var currentVideo by remember { mutableStateOf<String?>(null) }
     var paletteColors by remember { mutableStateOf<List<Color>?>(null) }
-    
+
+    // When a viewer (image or video) is open we hide the entire app chrome so
+    // the user only sees the media + viewer-owned controls. Previously the
+    // top bar (station name + URL) and burger menu both bled through behind
+    // the dim layer, and the burger's hit target overlapped the viewer's X.
+    val isViewerOpen = (imageViewerState.isFullScreen && imageViewerState.currentImageUrl != null) || currentVideo != null
+
     ModalNavigationDrawer(
         drawerState = drawerState,
+        gesturesEnabled = !isViewerOpen,
         drawerContent = {
             SettingsPanel(
                 isOpen = isSettingsOpen,
@@ -124,52 +131,58 @@ fun MainScreen(
     ) {
         Scaffold(
             topBar = {
-                CenterAlignedTopAppBar(
-                    title = { 
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                if (stationName.isNotEmpty()) stationName.uppercase() else "ALLSKY", 
-                                style = MaterialTheme.typography.titleLarge.copy(
-                                    fontWeight = FontWeight.Black,
-                                    letterSpacing = if (stationName.isNotEmpty()) 2.sp else 8.sp,
-                                    fontSize = if (stationName.isNotEmpty()) 18.sp else 20.sp
-                                ),
-                                textAlign = TextAlign.Center,
-                                maxLines = 1
-                            )
-                            if (allskyUrl.isNotEmpty()) {
+                // While a viewer is open we draw no top bar at all — the
+                // station name, URL pill and burger menu would otherwise
+                // bleed through behind the media and overlap the viewer's
+                // close button.
+                if (!isViewerOpen) {
+                    CenterAlignedTopAppBar(
+                        title = {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(
-                                    allskyUrl.substringAfter("://").substringBefore("/").uppercase(),
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        letterSpacing = 2.sp,
-                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                                    if (stationName.isNotEmpty()) stationName.uppercase() else "ALLSKY",
+                                    style = MaterialTheme.typography.titleLarge.copy(
+                                        fontWeight = FontWeight.Black,
+                                        letterSpacing = if (stationName.isNotEmpty()) 2.sp else 8.sp,
+                                        fontSize = if (stationName.isNotEmpty()) 18.sp else 20.sp
+                                    ),
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 1
+                                )
+                                if (allskyUrl.isNotEmpty()) {
+                                    Text(
+                                        allskyUrl.substringAfter("://").substringBefore("/").uppercase(),
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 2.sp,
+                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                                        )
                                     )
+                                }
+                            }
+                        },
+                        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                            containerColor = Color.Transparent,
+                            titleContentColor = Color.White
+                        ),
+                        navigationIcon = {
+                            IconButton(
+                                onClick = {
+                                    scope.launch {
+                                        isSettingsOpen = true
+                                        drawerState.open()
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Menu,
+                                    contentDescription = "Menu",
+                                    tint = Color.White
                                 )
                             }
                         }
-                    },
-                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                        containerColor = Color.Transparent,
-                        titleContentColor = Color.White
-                    ),
-                    navigationIcon = {
-                        IconButton(
-                            onClick = {
-                                scope.launch {
-                                    isSettingsOpen = true
-                                    drawerState.open()
-                                }
-                            }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Menu,
-                                contentDescription = "Menu",
-                                tint = Color.White
-                            )
-                        }
-                    }
-                )
+                    )
+                }
             },
             containerColor = Color.Transparent
         ) { padding ->
@@ -445,51 +458,58 @@ fun MainScreen(
                                     }
                                 }
                                 "MOON" -> {
-                                    Box(modifier = Modifier.padding(horizontal = 4.dp)) {
-                                        MoonPhaseDisplay()
-                                    }
-                                    Spacer(modifier = Modifier.height(20.dp))
+                                    MoonPhaseDisplay()
                                 }
                                 "TIMELAPSES" -> {
                                     AllskyMediaSection(
                                         title = "RECENT TIMELAPSES",
                                         media = allskyUiState.timelapses,
-                                        onMediaClick = { media -> currentVideo = media.url }
+                                        onMediaClick = { media -> currentVideo = media.url },
+                                        isLoading = allskyUiState.isLoading,
+                                        error = allskyUiState.error
                                     )
                                 }
                                 "METEORS" -> {
                                     AllskyMediaSection(
                                         title = "METEOR RECORDINGS",
                                         media = allskyUiState.meteors,
-                                        onMediaClick = { media -> 
-                                            if (media.url.lowercase().contains(".mp4") || 
+                                        onMediaClick = { media ->
+                                            if (media.url.lowercase().contains(".mp4") ||
                                                 media.url.lowercase().contains(".webm")) {
                                                 currentVideo = media.url
                                             } else {
                                                 imageViewerViewModel.showImage(media.url)
                                             }
-                                        }
+                                        },
+                                        isLoading = allskyUiState.isLoading,
+                                        error = allskyUiState.error
                                     )
                                 }
                                 "IMAGES" -> {
                                     AllskyMediaSection(
                                         title = "DAILY RAW IMAGES",
                                         media = allskyUiState.images,
-                                        onMediaClick = { media -> imageViewerViewModel.showImage(media.url) }
+                                        onMediaClick = { media -> imageViewerViewModel.showImage(media.url) },
+                                        isLoading = allskyUiState.isLoading,
+                                        error = allskyUiState.error
                                     )
                                 }
                                 "KEOGRAMS" -> {
                                     AllskyMediaSection(
                                         title = "KEOGRAMS",
                                         media = allskyUiState.keograms,
-                                        onMediaClick = { media -> imageViewerViewModel.showImage(media.url) }
+                                        onMediaClick = { media -> imageViewerViewModel.showImage(media.url) },
+                                        isLoading = allskyUiState.isLoading,
+                                        error = allskyUiState.error
                                     )
                                 }
                                 "STARTRAILS" -> {
                                     AllskyMediaSection(
                                         title = "STARTRAILS",
                                         media = allskyUiState.startrails,
-                                        onMediaClick = { media -> imageViewerViewModel.showImage(media.url) }
+                                        onMediaClick = { media -> imageViewerViewModel.showImage(media.url) },
+                                        isLoading = allskyUiState.isLoading,
+                                        error = allskyUiState.error
                                     )
                                 }
                             }

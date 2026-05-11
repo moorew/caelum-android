@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storm
+import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material3.*
@@ -88,6 +89,14 @@ fun SettingsPanel(
                 PanelItem("Startrails", Icons.Default.Star) { onNavigate("media/startrails") }
                 PanelItem("Meteors", Icons.Default.Storm) { onNavigate("media/meteors") }
                 PanelItem("Raw Images", Icons.Default.Image) { onNavigate("media/images") }
+            }
+
+            Section("Extras") {
+                // Optional focus-motor screen. The screen itself is the only
+                // place where the feature can be enabled, so showing the
+                // drawer item always (rather than gating on enabled) lets
+                // first-time users discover it.
+                PanelItem("Focus Motor", Icons.Default.CenterFocusStrong) { onNavigate("focus") }
             }
 
             Section("System") {
