@@ -1,7 +1,6 @@
 package de.astronarren.allsky.ui
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -175,7 +174,10 @@ fun MainScreen(
             containerColor = Color.Transparent
         ) { padding ->
             
-            // Dynamic Background based on Weather and Live Image Palette
+            // Dynamic Background based on weather and live image palette.
+            // Weather-driven gradients are intentionally close to the default
+            // navy so the app keeps a single visual identity instead of
+            // looking like a different app in every weather condition.
             val weatherCondition = weatherUiState.weatherData?.second?.firstOrNull()?.weather?.firstOrNull()?.main ?: "Clear"
             val backgroundColors = remember(weatherCondition, paletteColors) {
                 if (paletteColors != null && paletteColors!!.size >= 2) {
@@ -183,18 +185,16 @@ fun MainScreen(
                 } else {
                     when (weatherCondition) {
                         "Clear" -> listOf(DeepNavy, NightPurple, ClearNight)
-                        "Clouds" -> listOf(Color(0xFF101820), Color(0xFF2D3436), Color(0xFF455A64))
-                        "Rain", "Drizzle", "Thunderstorm" -> listOf(Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364))
-                        "Snow" -> listOf(Color(0xFF1E3C72), Color(0xFF2A5298), Color(0xFF4A90E2))
+                        "Clouds" -> listOf(Color(0xFF0B1224), Color(0xFF1A2440), Color(0xFF2B3656))
+                        "Rain", "Drizzle", "Thunderstorm" -> listOf(Color(0xFF0A1626), Color(0xFF152A40), Color(0xFF1F3A58))
+                        "Snow" -> listOf(Color(0xFF101A38), Color(0xFF1C2A5A), Color(0xFF2F4380))
                         else -> listOf(DeepNavy, NightPurple, ClearNight)
                     }
                 }
             }
 
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(brush = Brush.verticalGradient(colors = backgroundColors))
+            de.astronarren.allsky.ui.components.AppBackground(
+                colors = backgroundColors
             ) {
                 PullToRefreshBox(
                     isRefreshing = isRefreshing,
@@ -212,7 +212,10 @@ fun MainScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(top = padding.calculateTopPadding())
+                            .padding(
+                                top = padding.calculateTopPadding(),
+                                bottom = padding.calculateBottomPadding()
+                            )
                             .verticalScroll(scrollState),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
@@ -224,26 +227,35 @@ fun MainScreen(
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .height(420.dp)
-                                                .padding(20.dp)
+                                                .height(440.dp)
+                                                .padding(horizontal = 16.dp, vertical = 12.dp)
                                         ) {
                                             Card(
                                                 modifier = Modifier
                                                     .fillMaxSize()
-                                                    .clickable { 
-                                                        liveImageState.imageUrl?.let { imageViewerViewModel.showImage(it) }
+                                                    .clickable(
+                                                        enabled = !liveImageState.imageUrl.isNullOrEmpty()
+                                                    ) {
+                                                        liveImageState.imageUrl?.takeIf { it.isNotEmpty() }
+                                                            ?.let { imageViewerViewModel.showImage(it) }
                                                     },
-                                                shape = RoundedCornerShape(40.dp),
-                                                elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
-                                                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+                                                shape = RoundedCornerShape(32.dp),
+                                                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                                                border = androidx.compose.foundation.BorderStroke(
+                                                    1.dp, Color.White.copy(alpha = 0.12f)
+                                                )
                                             ) {
                                                 Box(modifier = Modifier.fillMaxSize()) {
+                                                    // Crossfade on `streamKey` (the resolved endpoint without the
+                                                    // cache buster) so the 30-second `?t=` refresh doesn't fade
+                                                    // the whole card in and out every cycle.
                                                     AnimatedContent(
-                                                        targetState = liveImageState.imageUrl,
+                                                        targetState = liveImageState.streamKey,
                                                         transitionSpec = { fadeIn(tween(800)) togetherWith fadeOut(tween(800)) },
                                                         label = "LiveImageCrossfade",
                                                         modifier = Modifier.fillMaxSize()
-                                                    ) { targetUrl ->
+                                                    ) { targetKey ->
+                                                        val targetUrl = if (targetKey != null) liveImageState.imageUrl else null
                                                         if (targetUrl != null) {
                                                             AsyncImage(
                                                                 model = coil.request.ImageRequest.Builder(LocalContext.current)
@@ -344,42 +356,39 @@ fun MainScreen(
                                 "BEST_VIEWING" -> {
                                     val bestNight = weatherViewModel.getBestViewingNight()
                                     if (bestNight != null) {
-                                        Card(
+                                        de.astronarren.allsky.ui.components.GlassCard(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(horizontal = 20.dp, vertical = 10.dp),
-                                            shape = RoundedCornerShape(32.dp),
-                                            colors = CardDefaults.cardColors(
-                                                containerColor = Color.White.copy(alpha = 0.1f)
-                                            ),
-                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+                                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                                            cornerRadius = 28.dp,
+                                            elevated = true
                                         ) {
                                             Column(
-                                                modifier = Modifier.padding(28.dp),
+                                                modifier = Modifier.padding(24.dp).fillMaxWidth(),
                                                 horizontalAlignment = Alignment.CenterHorizontally
                                             ) {
                                                 Text(
                                                     text = "BEST VIEWING NIGHT",
-                                                    style = MaterialTheme.typography.labelLarge.copy(
+                                                    style = MaterialTheme.typography.labelMedium.copy(
                                                         fontWeight = FontWeight.Black,
                                                         letterSpacing = 3.sp
                                                     ),
-                                                    color = Color(0xFFFFD600)
+                                                    color = MaterialTheme.colorScheme.secondary
                                                 )
-                                                Spacer(modifier = Modifier.height(16.dp))
+                                                Spacer(modifier = Modifier.height(12.dp))
                                                 Text(
                                                     text = SimpleDateFormat("EEEE, MMM d", Locale.getDefault()).format(Date(bestNight.dt * 1000L)).uppercase(),
-                                                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Black),
+                                                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Black),
                                                     color = Color.White
                                                 )
-                                                Spacer(modifier = Modifier.height(8.dp))
+                                                Spacer(modifier = Modifier.height(6.dp))
                                                 Text(
                                                     text = "${bestNight.weather.firstOrNull()?.description?.uppercase() ?: ""} • ${bestNight.clouds.all}% CLOUDS",
-                                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                                    style = MaterialTheme.typography.bodySmall.copy(
                                                         fontWeight = FontWeight.Bold,
                                                         letterSpacing = 1.sp
                                                     ),
-                                                    color = Color.White.copy(alpha = 0.5f)
+                                                    color = Color.White.copy(alpha = 0.55f)
                                                 )
                                             }
                                         }
@@ -387,33 +396,47 @@ fun MainScreen(
                                 }
                                 "WEATHER" -> {
                                     if (apiKey.isEmpty()) {
-                                        Card(
+                                        de.astronarren.allsky.ui.components.GlassCard(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(20.dp),
-                                            shape = RoundedCornerShape(32.dp),
-                                            colors = CardDefaults.cardColors(
-                                                containerColor = Color.White.copy(alpha = 0.05f)
-                                            ),
-                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+                                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                                            cornerRadius = 28.dp
                                         ) {
                                             Column(
-                                                modifier = Modifier.padding(28.dp),
+                                                modifier = Modifier.padding(24.dp).fillMaxWidth(),
                                                 horizontalAlignment = Alignment.CenterHorizontally
                                             ) {
                                                 Text(
                                                     text = "WEATHER FORECAST",
-                                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Black, letterSpacing = 2.sp),
+                                                    style = MaterialTheme.typography.labelMedium.copy(
+                                                        fontWeight = FontWeight.Black, letterSpacing = 2.sp
+                                                    ),
                                                     color = Color.White.copy(alpha = 0.7f)
+                                                )
+                                                Spacer(modifier = Modifier.height(12.dp))
+                                                Text(
+                                                    text = "Add your OpenWeather API key to see local forecasts.",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = Color.White.copy(alpha = 0.55f),
+                                                    textAlign = TextAlign.Center
                                                 )
                                                 Spacer(modifier = Modifier.height(16.dp))
                                                 val uriHandler = LocalUriHandler.current
                                                 Button(
                                                     onClick = { uriHandler.openUri("https://home.openweathermap.org/api_keys") },
                                                     shape = RoundedCornerShape(16.dp),
-                                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                                    colors = ButtonDefaults.buttonColors(
+                                                        containerColor = Color.White,
+                                                        contentColor = MaterialTheme.colorScheme.background
+                                                    )
                                                 ) {
-                                                    Text("GET API KEY", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Black))
+                                                    Text(
+                                                        "GET API KEY",
+                                                        style = MaterialTheme.typography.labelLarge.copy(
+                                                            fontWeight = FontWeight.Black,
+                                                            letterSpacing = 2.sp
+                                                        )
+                                                    )
                                                 }
                                             }
                                         }
@@ -472,7 +495,7 @@ fun MainScreen(
                             }
                         }
                         
-                        Spacer(modifier = Modifier.height(60.dp))
+                        Spacer(modifier = Modifier.height(32.dp))
                     }
                 }
 

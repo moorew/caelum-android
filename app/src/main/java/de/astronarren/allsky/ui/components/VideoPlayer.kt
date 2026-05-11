@@ -30,6 +30,8 @@ import kotlinx.coroutines.launch
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import de.astronarren.allsky.network.AllskyAuth
 
 @Composable
 fun VideoPlayer(
@@ -41,7 +43,7 @@ fun VideoPlayer(
     val downloadHelper = remember { DownloadHelper(context, userPreferences) }
     val scope = rememberCoroutineScope()
     
-    val exoPlayer = remember {
+    val exoPlayer = remember(videoUrl) {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 32000, // min buffer
@@ -49,19 +51,40 @@ fun VideoPlayer(
                 2000,  // buffer for playback
                 5000   // buffer for playback after rebuffer
             ).build()
-            
+
+        // Strip any `user:pass@` embedded in the URL by AllskyRepository and
+        // promote it to a request header. Falls back to stored credentials if
+        // the URL was clean — most Allsky installs sit behind Basic Auth and
+        // ExoPlayer otherwise drops userinfo silently, returning HTTP 401.
+        val (cleanUrl, urlAuth) = AllskyAuth.extractAuth(videoUrl)
+        val auth = urlAuth ?: run {
+            val storedUser = kotlinx.coroutines.runBlocking { userPreferences.getUsername() }
+            val storedPass = kotlinx.coroutines.runBlocking { userPreferences.getPassword() }
+            AllskyAuth.basicAuthHeader(storedUser, storedPass)
+        }
+
+        val httpFactory = DefaultHttpDataSource.Factory()
+            .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(15000)
+            .setReadTimeoutMs(15000)
+            .setUserAgent("Allsky-Companion/ExoPlayer")
+        if (auth != null) {
+            httpFactory.setDefaultRequestProperties(mapOf("Authorization" to auth))
+        }
+        val dataSourceFactory = DefaultDataSource.Factory(context, httpFactory)
+
         ExoPlayer.Builder(context)
             .setLoadControl(loadControl)
             .build().apply {
-                val dataSourceFactory = DefaultDataSource.Factory(context)
-                val mediaItem = MediaItem.fromUri(videoUrl)
-                
-                val mediaSource = if (videoUrl.lowercase().endsWith(".m3u8")) {
+                val mediaItem = MediaItem.fromUri(cleanUrl)
+
+                val mediaSource = if (cleanUrl.lowercase().endsWith(".m3u8")) {
                     HlsMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
                 } else {
-                    androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dataSourceFactory).createMediaSource(mediaItem)
+                    androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dataSourceFactory)
+                        .createMediaSource(mediaItem)
                 }
-                
+
                 setMediaSource(mediaSource)
                 prepare()
                 playWhenReady = true

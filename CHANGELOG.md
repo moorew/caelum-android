@@ -4,6 +4,51 @@ All notable changes to the Allsky Companion App will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-05-10
+### Added
+- **Unified Material 3 Design System**: New `Color.kt` with proper M3 surface
+  tiers (`surfaceContainer*` scale), a dedicated `Shape.kt`, and refined
+  typography in `Type.kt`. Every screen now pulls from these tokens instead
+  of hand-tuning alpha + corner radius at the call site.
+- **Shared Surfaces**: `AppBackground` (the navy nebula gradient) and
+  `GlassCard` (translucent card with consistent border) — used across
+  Settings, Media, Layout Editor, About, and the drawer for a single visual
+  language.
+- **Splash Theme Fix**: `themes.xml` now extends Material 3 with a navy
+  window background, so cold start no longer flashes white before Compose
+  draws the first frame.
+
+### Changed
+- **Settings Screen**: Re-grouped into Station / Credentials / Location /
+  Appearance sections with section headers and icon glyphs. Inputs use a
+  custom glass-styled `OutlinedTextField` palette.
+- **Media Screen**: Tighter grid, lower-profile filter chips, modern empty
+  and error states inside a `GlassCard`. Plays in the same dark aesthetic as
+  the home screen.
+- **Layout Editor**: Each module is now a card with an at-a-glance enabled
+  state, drag handle glyph, and quieter reorder buttons.
+- **About Screen**: Rebuilt as a single dark-themed card stack with brand
+  display type, author links inside rounded pills, and a feature glyph list.
+- **Drawer (`SettingsPanel`)**: Glass list items grouped by section
+  (Navigation / Media / System); ditched the legacy `NavigationDrawerItem`
+  for a more compact custom row.
+- **MainScreen**: Live image card uses 32 dp radius and 8 dp elevation;
+  Best Viewing and Weather empty-state cards use the new `GlassCard`.
+- **Material You Off By Default**: `dynamicColor = false` so the curated
+  cosmic identity isn't replaced by the user's wallpaper colours.
+
+## [2.0.1] - 2026-05-10
+### Fixed
+- **Videos Behind Basic Auth**: ExoPlayer now sends `Authorization: Basic …` on every request. Previously the `user:pass@host` form was stripped before the connection was made, so protected installs returned HTTP 401 and timelapses, meteor recordings, and HLS streams refused to play.
+- **Thumbnails Behind Basic Auth**: Coil now shares a single OkHttp client with a dedicated auth interceptor that promotes URL userinfo (or saved credentials when the host matches the configured Allsky URL) to a Basic Auth header. Keograms, startrails, and the live image now load correctly on password-protected portals.
+- **Empty Live Tile**: The home screen no longer opens a broken viewer when tapped before the first frame loads; a loading spinner is shown instead and the tile is non-clickable until the stream resolves.
+- **Live Image Flicker**: The 30-second refresh no longer triggers a full fade-in/out crossfade on the live card. The crossfade now only runs when the underlying stream URL itself changes.
+- **Wasted HEAD Probes**: The live-image endpoint is now cached after the first successful probe, eliminating redundant HEAD requests on every 30-second refresh.
+- **Bottom Gesture Inset**: Main screen content now respects the system navigation/gesture inset so the bottom of the scroll isn't hidden.
+- **Image Gallery Noise**: Day-list navigation links (`page=list_images`, trailing-slash directory entries) no longer leak into the raw-image carousel; they're isolated for the nested-day fetch only.
+- **Layout Editor Order**: Re-enabling a hidden module now inserts it at its canonical position rather than appending to the end of the layout.
+- **Downloads Behind Basic Auth**: `DownloadManager` requests now strip any userinfo from the URL and add a proper `Authorization` header.
+
 ## [2.0.0] - 2026-04-14
 ### Added
 - **Station Name Personalization**: You can now set a custom name for your Allsky station in the settings, which will be displayed in the top bar.

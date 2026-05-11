@@ -32,9 +32,11 @@ import androidx.navigation.compose.rememberNavController
 import coil.Coil
 import coil.ImageLoader
 import coil.decode.VideoFrameDecoder
+import de.astronarren.allsky.network.AllskyAuthInterceptor
 import de.astronarren.allsky.ui.layout.LayoutEditorScreen
 import de.astronarren.allsky.ui.media.MediaScreen
 import de.astronarren.allsky.ui.settings.SettingsScreen
+import okhttp3.OkHttpClient
 
 class MainActivity : ComponentActivity() {
     private lateinit var weatherViewModel: WeatherViewModel
@@ -74,7 +76,15 @@ class MainActivity : ComponentActivity() {
         setupViewModel = SetupViewModel(userPreferences)
         liveImageViewModel = LiveImageViewModel(userPreferences)
         
+        // Shared OkHttp client carrying the Basic Auth interceptor so every
+        // Coil request to the configured Allsky host is authenticated, with or
+        // without `user:pass@` embedded in the URL.
+        val okHttpClient = OkHttpClient.Builder()
+            .addInterceptor(AllskyAuthInterceptor(userPreferences))
+            .build()
+
         val imageLoader = ImageLoader.Builder(applicationContext)
+            .okHttpClient(okHttpClient)
             .components {
                 add(VideoFrameDecoder.Factory())
             }
