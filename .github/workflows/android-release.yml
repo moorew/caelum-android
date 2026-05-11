@@ -79,7 +79,7 @@ jobs:
         run: |
           APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
           echo "Found: $APK"
-          NEW_NAME="allsky-companion-${{ steps.get_version.outputs.version }}.apk"
+          NEW_NAME="caelum-${{ steps.get_version.outputs.version }}.apk"
           mv "$APK" "$NEW_NAME"
           echo "RELEASE_APK=$NEW_NAME" >> $GITHUB_ENV
 
