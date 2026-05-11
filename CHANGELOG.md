@@ -1,8 +1,32 @@
 # Changelog
-All notable changes to the Allsky Companion App will be documented in this file.
+All notable changes to Caelum (formerly the Allsky Companion App) will be
+documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [3.0.0] - 2026-05-11
+### Changed
+- **Renamed to Caelum**: Latin for "the heavens" — and a southern
+  constellation. The app keeps the same internal `de.astronarren.allsky`
+  applicationId so existing installs update in place without losing
+  settings; only the display name, launcher icon, and About copy change.
+  References to "Allsky" remain wherever they describe the upstream
+  camera/server product (the URL field, the camera-credit copy, the
+  upstream-project link).
+- **New Launcher Icon**: Four-star Caelum-constellation glyph drawn as a
+  vector adaptive icon on the existing deep-navy background. Renders
+  crisply at every density and survives all OEM mask shapes (circle,
+  squircle, teardrop). The notification status-bar drawable (crescent
+  moon + sparkle, shipped in 2.3.0) is unchanged.
+
+### Fixed
+- **compileSdk 35 Build Errors**: `MainActivity.onNewIntent` now overrides
+  the non-null `Intent` parameter (Android's SDK 35 platform stubs tightened
+  the nullability), and `MainScreen.kt` adds the missing
+  `androidx.compose.ui.layout.positionInParent` import. Both errors were
+  blocking `assembleDebug` and `assembleRelease` in CI; this is the actual
+  build of 2.3.0 reaching users.
 
 ## [2.3.0] - 2026-05-11
 ### Added

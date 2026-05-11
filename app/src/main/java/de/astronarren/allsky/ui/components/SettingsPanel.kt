@@ -80,7 +80,7 @@ fun SettingsPanel(
                 modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
             )
             Text(
-                text = "Allsky",
+                text = "Caelum",
                 style = MaterialTheme.typography.headlineMedium.copy(
                     fontWeight = FontWeight.Black,
                     letterSpacing = (-1).sp

@@ -1,0 +1,64 @@
+<!--
+  Caelum launcher icon foreground.
+
+  Design: stylised four-star Caelum constellation (α-β-γ-δ Caeli) arranged in
+  a gentle diagonal curve, joined by a thin connecting stroke — the same
+  convention star-chart apps use to render constellation patterns. Caelum is
+  a small southern constellation; the Latin name means "the heavens" /
+  "chisel."
+
+  Adaptive-icon contract:
+    • 108×108 viewport
+    • All meaningful content kept inside a circle of radius 33 centred at
+      (54,54) — the Material Design adaptive-icon safe zone that survives
+      every OEM mask shape (circle, squircle, teardrop, etc.).
+
+  Each star is a four-pointed cross-style glyph (cleaner than 5-point at
+  launcher-icon sizes), drawn as a single closed path. The brightest star
+  (α Caeli) sits upper-left and is rendered largest; the others taper down
+  along the curve to give the eye a clear reading order.
+
+  Connector lines use a low-alpha stroke so the stars are unambiguously the
+  primary motif — the lines just hint at "this is a constellation" without
+  competing visually.
+
+  Tip-distance verification (max distance of any star tip from centre
+  54,54; all values ≤ 33dp):
+    α at (40,42) r=8   →  max 25.1
+    β at (52,52) r=5.5 →  max  7.8
+    γ at (64,62) r=7   →  max 18.8
+    δ at (74,74) r=4.5 →  max 31.6
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Connector lines: α → β → γ → δ. Drawn first so stars overlay them. -->
+    <path
+        android:strokeColor="#66FFFFFF"
+        android:strokeWidth="0.9"
+        android:strokeLineCap="round"
+        android:pathData="M40,42 L52,52 L64,62 L74,74" />
+
+    <!-- α Caeli — brightest. Centre (40,42), point radius 8. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M40,34 L42.4,39.6 L48,42 L42.4,44.4 L40,50 L37.6,44.4 L32,42 L37.6,39.6 Z" />
+
+    <!-- β Caeli — small middle. Centre (52,52), point radius 5.5. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M52,46.5 L53.65,50.35 L57.5,52 L53.65,53.65 L52,57.5 L50.35,53.65 L46.5,52 L50.35,50.35 Z" />
+
+    <!-- γ Caeli — medium. Centre (64,62), point radius 7. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M64,55 L66.1,59.9 L71,62 L66.1,64.1 L64,69 L61.9,64.1 L57,62 L61.9,59.9 Z" />
+
+    <!-- δ Caeli — small. Centre (74,74), point radius 4.5. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M74,69.5 L75.35,72.65 L78.5,74 L75.35,75.35 L74,78.5 L72.65,75.35 L69.5,74 L72.65,72.65 Z" />
+</vector>

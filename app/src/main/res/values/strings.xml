@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Allsky</string>
+    <string name="app_name">Caelum</string>
     
     <!-- Settings Panel -->
     <string name="settings">Settings</string>
@@ -39,8 +39,8 @@
     <string name="permission_later">You can grant this permission later.</string>
     
     <!-- Welcome Screen -->
-    <string name="welcome_title">Welcome to Allsky</string>
-    <string name="welcome_subtitle">Monitor your sky with this Allsky companion app</string>
+    <string name="welcome_title">Welcome to Caelum</string>
+    <string name="welcome_subtitle">Your night-sky companion for Allsky cameras</string>
     <string name="learn_more">Learn more about Allsky</string>
     <string name="allsky_url_title">Allsky URL</string>
     <string name="openweather_title">OpenWeather API Key</string>
@@ -67,7 +67,7 @@
     <string name="media_from_date" translatable="false">Media from %s</string>
     
     <!-- About Screen -->
-    <string name="about_title">Allsky Companion App</string>
+    <string name="about_title">Caelum</string>
     <string name="about_copyright">© 2024 astro-narren.de / AcoVanConis</string>
     <string name="about_description">Monitor your Allsky camera, view weather data, and access historical captures.</string>
     <string name="about_features">Features</string>

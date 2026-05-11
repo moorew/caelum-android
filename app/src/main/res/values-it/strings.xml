@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Allsky</string>
+    <string name="app_name">Caelum</string>
     
     <!-- Settings Panel -->
     <string name="settings">Impostazioni</string>
@@ -26,7 +26,7 @@
     <string name="next_new_moon_in">Prossima luna nuova tra %d giorni</string>
     
     <!-- About Screen -->
-    <string name="about_title">App Allsky</string>
+    <string name="about_title">Caelum</string>
     <string name="about_description">Monitora la tua camera Allsky, visualizza i dati meteo e accedi alle catture storiche.</string>
     <string name="about_features">Funzionalità</string>
     <string name="about_components">Componenti e Librerie</string>
@@ -104,8 +104,8 @@
     <string name="api_key_description">Opzionale: Aggiungi la tua chiave API OpenWeather per vedere le previsioni</string>
     <string name="location_permission_note">Nota: Le previsioni richiedono il permesso GPS per rilevare la tua posizione attuale.</string>
     <string name="permission_later">Puoi concedere questo permesso più tardi.</string>
-    <string name="welcome_title">Benvenuto in Allsky</string>
-    <string name="welcome_subtitle">Monitora il tuo cielo con questa app companion Allsky</string>
+    <string name="welcome_title">Benvenuto in Caelum</string>
+    <string name="welcome_subtitle">Il tuo compagno del cielo notturno per camere Allsky</string>
     <string name="learn_more">Scopri di più su Allsky</string>
     <string name="allsky_url_title">URL Allsky</string>
     <string name="openweather_title">Chiave API OpenWeather</string>
