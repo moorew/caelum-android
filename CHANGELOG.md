@@ -5,6 +5,24 @@ documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.1] - 2026-05-11
+### Fixed
+- **Layout editor: saved removals stick.** Unchecking a module and hitting
+  SAVE used to round-trip the layout through `resolveLayout()`, which
+  re-appended every DEFAULT_LAYOUT module missing from the saved list and
+  silently undid your change. The auto-append block was duplicative of the
+  layout-version-bump mechanism and is gone; the saved list is now
+  honoured verbatim.
+
+### Changed
+- **Layout editor: real drag-to-reorder.** Long-press the grip on the left
+  of any row to drag it into a new position; haptic tick fires on grab and
+  on each swap. The editor now splits into two sections — "ON HOME SCREEN"
+  (draggable, reorderable) and "AVAILABLE" (tap + to add) — so the drag
+  affordance never lies about what's interactive. Up/down arrow buttons
+  are removed; drag is the primary mechanism. Built on
+  `sh.calvin.reorderable:2.4.3` (~70 KB MIT lib, zero transitive deps).
+
 ## [3.0.0] - 2026-05-11
 ### Changed
 - **Renamed to Caelum**: Latin for "the heavens" — and a southern
