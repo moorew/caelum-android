@@ -215,31 +215,45 @@ class AllskyRepository(
 
     private fun parseImages(doc: org.jsoup.nodes.Document, baseUrl: String): List<AllskyMedia> {
         val elements = doc.select("a[href], img[src]")
-        return elements.mapNotNull { element ->
+        // Day-list navigation links (e.g. `page=list_images&day=…`, or trailing
+        // slash directory links). These are kept *only* so the caller can drill
+        // into the latest day; they are filtered out of the final image list.
+        val dayLinks = mutableListOf<AllskyMedia>()
+        val realImages = elements.mapNotNull { element ->
             try {
                 var rawHref = element.attr("href").ifEmpty { element.attr("src") }.trim()
                 if (rawHref.contains("?") && !rawHref.contains("page=list_")) return@mapNotNull null
                 if (rawHref.startsWith("..") || rawHref.contains("delete") || rawHref.contains("edit")) return@mapNotNull null
-                
+
                 rawHref = rawHref.replace("thumbnails/", "")
                 val url = normalizeUrl(rawHref, baseUrl, "images") ?: return@mapNotNull null
-                
+
                 val lowerUrl = url.lowercase()
                 val lowerFileName = url.substringAfterLast("/").substringBefore("?").lowercase()
-                
-                if (lowerUrl.contains("page=list_images") || lowerUrl.endsWith("/") || 
-                    ((lowerUrl.contains(".jpg") || lowerUrl.contains(".png")) && 
-                     !lowerFileName.contains("keogram") && !lowerFileName.contains("startrail") && !lowerFileName.contains("image.jpg") && !lowerFileName.contains("logo"))) {
-                    
-                    AllskyMedia(
-                        date = extractDate(rawHref, element),
-                        url = url
-                    )
+
+                val isDayLink = lowerUrl.contains("page=list_images") || lowerUrl.endsWith("/")
+                if (isDayLink) {
+                    dayLinks.add(AllskyMedia(date = extractDate(rawHref, element), url = url))
+                    return@mapNotNull null
+                }
+
+                val isImage = (lowerUrl.contains(".jpg") || lowerUrl.contains(".png") || lowerUrl.contains(".jpeg")) &&
+                    !lowerFileName.contains("keogram") &&
+                    !lowerFileName.contains("startrail") &&
+                    !lowerFileName.contains("image.jpg") &&
+                    !lowerFileName.contains("logo")
+
+                if (isImage) {
+                    AllskyMedia(date = extractDate(rawHref, element), url = url)
                 } else null
             } catch (e: Exception) {
                 null
             }
-        }.sortedByDescending { it.date }.distinctBy { it.url }.take(40)
+        }
+        // If the portal listed days rather than images, surface the day links
+        // so the caller's nested-day fetch can follow into the most recent.
+        val combined = if (realImages.isEmpty() && dayLinks.isNotEmpty()) dayLinks else realImages
+        return combined.sortedByDescending { it.date }.distinctBy { it.url }.take(40)
     }
 
     private fun parseTimelapses(doc: org.jsoup.nodes.Document, baseUrl: String): List<AllskyMedia> {

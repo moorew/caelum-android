@@ -39,10 +39,13 @@ fun MoonPhaseDisplay() {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp),
-        shape = RoundedCornerShape(32.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color.White.copy(alpha = 0.05f)
+            containerColor = Color.White.copy(alpha = 0.06f)
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp, Color.White.copy(alpha = 0.08f)
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {

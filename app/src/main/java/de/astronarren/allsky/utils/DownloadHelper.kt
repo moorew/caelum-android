@@ -5,9 +5,8 @@ import android.content.Context
 import android.net.Uri
 import android.os.Environment
 import android.widget.Toast
-import java.io.File
-
 import de.astronarren.allsky.data.UserPreferences
+import de.astronarren.allsky.network.AllskyAuth
 
 class DownloadHelper(
     private val context: Context,
@@ -15,7 +14,11 @@ class DownloadHelper(
 ) {
     suspend fun downloadMedia(url: String, fileName: String, isVideo: Boolean = false) {
         try {
-            val request = DownloadManager.Request(Uri.parse(url))
+            // DownloadManager refuses URLs with embedded userinfo on some
+            // Android builds — promote any `user:pass@host` to a proper
+            // Authorization header before enqueueing.
+            val (cleanUrl, urlAuth) = AllskyAuth.extractAuth(url)
+            val request = DownloadManager.Request(Uri.parse(cleanUrl))
                 .setTitle(fileName)
                 .setDescription("Downloading Allsky media...")
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
@@ -26,19 +29,17 @@ class DownloadHelper(
                 .setAllowedOverMetered(true)
                 .setAllowedOverRoaming(true)
 
-            val username = userPreferences.getUsername()
-            val password = userPreferences.getPassword()
-            if (username.isNotEmpty() && password.isNotEmpty()) {
-                val auth = "Basic " + android.util.Base64.encodeToString(
-                    "$username:$password".toByteArray(),
-                    android.util.Base64.NO_WRAP
-                )
+            val auth = urlAuth ?: AllskyAuth.basicAuthHeader(
+                userPreferences.getUsername(),
+                userPreferences.getPassword()
+            )
+            if (auth != null) {
                 request.addRequestHeader("Authorization", auth)
             }
 
             val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
             downloadManager.enqueue(request)
-            
+
             Toast.makeText(context, "Download started...", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             Toast.makeText(context, "Download failed: ${e.message}", Toast.LENGTH_LONG).show()

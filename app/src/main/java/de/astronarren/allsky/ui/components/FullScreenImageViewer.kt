@@ -102,48 +102,68 @@ fun FullScreenImageViewer(
             contentScale = ContentScale.Fit
         )
         
-        // Header with Title and Buttons
-        Surface(
+        // Top chrome: floating pill bar with close, filename, download.
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp)
                 .align(Alignment.TopCenter),
-            color = Color.Black.copy(alpha = 0.7f)
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Surface(
+                onClick = onDismiss,
+                modifier = Modifier.size(44.dp),
+                shape = CircleShape,
+                color = Color.Black.copy(alpha = 0.55f)
             ) {
-                IconButton(onClick = onDismiss) {
+                Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Close",
-                        tint = Color.White
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp)
                     )
                 }
-                
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Surface(
+                modifier = Modifier.weight(1f),
+                shape = CircleShape,
+                color = Color.Black.copy(alpha = 0.45f)
+            ) {
                 Text(
                     text = fileName,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    ),
                     color = Color.White,
-                    modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                     maxLines = 1,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
+            }
 
-                IconButton(
-                    onClick = {
-                        scope.launch {
-                            downloadHelper.downloadMedia(imageUrl, fileName, isVideo = false)
-                        }
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Surface(
+                onClick = {
+                    scope.launch {
+                        downloadHelper.downloadMedia(imageUrl, fileName, isVideo = false)
                     }
-                ) {
+                },
+                modifier = Modifier.size(44.dp),
+                shape = CircleShape,
+                color = Color.Black.copy(alpha = 0.55f)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = Icons.Default.Download,
                         contentDescription = "Download",
-                        tint = Color.White
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp)
                     )
                 }
             }
