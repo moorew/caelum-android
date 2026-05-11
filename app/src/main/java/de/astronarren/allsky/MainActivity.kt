@@ -222,10 +222,10 @@ class MainActivity : ComponentActivity() {
      * the notification while the activity is already running would just
      * bring it to the front with no extras delivered to MainScreen.
      */
-    override fun onNewIntent(intent: Intent?) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        intent?.getStringExtra(NotificationHelper.EXTRA_SCROLL_TO)?.let {
+        intent.getStringExtra(NotificationHelper.EXTRA_SCROLL_TO)?.let {
             scrollTarget.value = it
         }
     }
