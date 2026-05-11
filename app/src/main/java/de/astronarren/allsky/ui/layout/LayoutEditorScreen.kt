@@ -2,18 +2,20 @@ package de.astronarren.allsky.ui.layout
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -21,6 +23,8 @@ import de.astronarren.allsky.data.UserPreferences
 import de.astronarren.allsky.ui.components.AppBackground
 import de.astronarren.allsky.ui.components.GlassCard
 import kotlinx.coroutines.launch
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 val ALL_MODULES = listOf(
     "LIVE_VIEW",
@@ -47,6 +51,12 @@ private fun getModuleLabel(key: String): String = when (key) {
     else -> key
 }
 
+/**
+ * The layout editor splits modules into two sections — the home-screen list
+ * (drag-to-reorder, long-press the handle) and the off list (tap to add).
+ * Reorder operates only on the on-list, which keeps the swap logic simple
+ * and the affordance honest: you can't drag what isn't on screen.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LayoutEditorScreen(
@@ -54,16 +64,29 @@ fun LayoutEditorScreen(
     onNavigateBack: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    var currentLayout by remember { mutableStateOf<List<String>>(emptyList()) }
+    val haptics = LocalHapticFeedback.current
 
-    val fullList = remember(currentLayout) {
-        val list = currentLayout.toMutableList()
-        ALL_MODULES.forEach { if (!list.contains(it)) list.add(it) }
-        list
+    var onList by remember { mutableStateOf<List<String>>(emptyList()) }
+    val offList by remember {
+        derivedStateOf { ALL_MODULES.filterNot { it in onList } }
     }
 
     LaunchedEffect(Unit) {
-        currentLayout = userPreferences.getMainLayout()
+        onList = userPreferences.getMainLayout()
+    }
+
+    val lazyListState = rememberLazyListState()
+    val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        // The reorderable library hands us indexes into the LazyColumn's full
+        // item list. We have one header item before the on-list, so subtract
+        // 1 to map back into our pure-data list. Off-list items live below
+        // their own header and are not draggable, so we never see them here.
+        val fromIdx = from.index - 1
+        val toIdx = to.index - 1
+        if (fromIdx in onList.indices && toIdx in onList.indices) {
+            onList = onList.toMutableList().apply { add(toIdx, removeAt(fromIdx)) }
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
     }
 
     AppBackground {
@@ -103,7 +126,7 @@ fun LayoutEditorScreen(
                     .padding(horizontal = 20.dp)
             ) {
                 Text(
-                    text = "TOGGLE & REORDER SECTIONS ON YOUR HOME SCREEN",
+                    text = "DRAG TO REORDER · TAP TO ADD OR REMOVE",
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.sp
@@ -113,106 +136,50 @@ fun LayoutEditorScreen(
                 )
 
                 LazyColumn(
+                    state = lazyListState,
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    itemsIndexed(fullList) { _, module ->
-                        val isVisible = currentLayout.contains(module)
-                        val activeIndex = currentLayout.indexOf(module)
-                        GlassCard(
-                            modifier = Modifier.fillMaxWidth(),
-                            cornerRadius = 18.dp,
-                            elevated = isVisible
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.DragHandle,
-                                    contentDescription = null,
-                                    tint = Color.White.copy(alpha = if (isVisible) 0.5f else 0.2f),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Checkbox(
-                                    checked = isVisible,
-                                    onCheckedChange = { checked ->
-                                        val newLayout = currentLayout.toMutableList()
-                                        if (checked) {
-                                            if (!newLayout.contains(module)) {
-                                                val canonicalIndex = ALL_MODULES.indexOf(module)
-                                                val insertAt = (canonicalIndex - 1 downTo 0)
-                                                    .firstNotNullOfOrNull { i ->
-                                                        val pos = newLayout.indexOf(ALL_MODULES[i])
-                                                        if (pos >= 0) pos + 1 else null
-                                                    } ?: 0
-                                                newLayout.add(insertAt.coerceAtMost(newLayout.size), module)
-                                            }
-                                        } else {
-                                            newLayout.remove(module)
-                                        }
-                                        currentLayout = newLayout
-                                    },
-                                    colors = CheckboxDefaults.colors(
-                                        checkedColor = MaterialTheme.colorScheme.primary,
-                                        uncheckedColor = Color.White.copy(alpha = 0.4f)
-                                    )
-                                )
-                                Text(
-                                    text = getModuleLabel(module),
-                                    style = MaterialTheme.typography.titleSmall.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        letterSpacing = 0.5.sp
-                                    ),
-                                    color = if (isVisible) Color.White else Color.White.copy(alpha = 0.4f),
-                                    modifier = Modifier.weight(1f)
-                                )
+                    // Section header: ON HOME SCREEN
+                    item(key = "header_on") {
+                        SectionHeader(
+                            title = "ON HOME SCREEN",
+                            count = onList.size
+                        )
+                    }
 
-                                if (isVisible) {
-                                    IconButton(
-                                        onClick = {
-                                            if (activeIndex > 0) {
-                                                val newLayout = currentLayout.toMutableList()
-                                                val temp = newLayout[activeIndex - 1]
-                                                newLayout[activeIndex - 1] = newLayout[activeIndex]
-                                                newLayout[activeIndex] = temp
-                                                currentLayout = newLayout
-                                            }
-                                        },
-                                        enabled = activeIndex > 0
-                                    ) {
-                                        Icon(
-                                            Icons.Default.ArrowUpward,
-                                            contentDescription = "Up",
-                                            tint = if (activeIndex > 0) Color.White.copy(alpha = 0.85f)
-                                                   else Color.White.copy(alpha = 0.2f)
-                                        )
+                    // The on-list — reorderable. Keyed by the module string so
+                    // Compose can animate items across the swap.
+                    items(items = onList, key = { it }) { module ->
+                        ReorderableItem(reorderState, key = module) { _ ->
+                            OnRow(
+                                module = module,
+                                onRemove = { onList = onList - module },
+                                dragHandleModifier = Modifier.draggableHandle(
+                                    onDragStarted = {
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                     }
-                                    IconButton(
-                                        onClick = {
-                                            if (activeIndex < currentLayout.size - 1) {
-                                                val newLayout = currentLayout.toMutableList()
-                                                val temp = newLayout[activeIndex + 1]
-                                                newLayout[activeIndex + 1] = newLayout[activeIndex]
-                                                newLayout[activeIndex] = temp
-                                                currentLayout = newLayout
-                                            }
-                                        },
-                                        enabled = activeIndex < currentLayout.size - 1 && activeIndex != -1
-                                    ) {
-                                        Icon(
-                                            Icons.Default.ArrowDownward,
-                                            contentDescription = "Down",
-                                            tint = if (activeIndex < currentLayout.size - 1)
-                                                       Color.White.copy(alpha = 0.85f)
-                                                   else Color.White.copy(alpha = 0.2f)
-                                        )
-                                    }
-                                }
-                            }
+                                )
+                            )
+                        }
+                    }
+
+                    // Section header: AVAILABLE — only shown when there's
+                    // something to add. Saves a row of empty header noise
+                    // once the user has everything turned on.
+                    if (offList.isNotEmpty()) {
+                        item(key = "header_off") {
+                            SectionHeader(
+                                title = "AVAILABLE",
+                                count = offList.size,
+                                topPadding = 12.dp
+                            )
+                        }
+                        items(items = offList, key = { "off_$it" }) { module ->
+                            OffRow(
+                                module = module,
+                                onAdd = { onList = onList + module }
+                            )
                         }
                     }
                 }
@@ -224,10 +191,14 @@ fun LayoutEditorScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     OutlinedButton(
-                        onClick = { currentLayout = ALL_MODULES },
-                        modifier = Modifier.weight(1f).height(52.dp),
+                        onClick = { onList = ALL_MODULES },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(52.dp),
                         shape = RoundedCornerShape(18.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp, Color.White.copy(alpha = 0.3f)
+                        ),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
                     ) {
                         Text(
@@ -241,11 +212,13 @@ fun LayoutEditorScreen(
                     Button(
                         onClick = {
                             scope.launch {
-                                userPreferences.saveMainLayout(currentLayout)
+                                userPreferences.saveMainLayout(onList)
                                 onNavigateBack()
                             }
                         },
-                        modifier = Modifier.weight(1f).height(52.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(52.dp),
                         shape = RoundedCornerShape(18.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = Color.White,
@@ -263,6 +236,134 @@ fun LayoutEditorScreen(
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionHeader(
+    title: String,
+    count: Int,
+    topPadding: androidx.compose.ui.unit.Dp = 0.dp
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = topPadding, bottom = 4.dp, start = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontWeight = FontWeight.Black,
+                letterSpacing = 3.sp
+            ),
+            color = Color.White.copy(alpha = 0.7f)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = count.toString(),
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontWeight = FontWeight.Bold
+            ),
+            color = Color.White.copy(alpha = 0.35f)
+        )
+    }
+}
+
+/** Active home-screen row: drag handle, label, remove. */
+@Composable
+private fun OnRow(
+    module: String,
+    onRemove: () -> Unit,
+    dragHandleModifier: Modifier
+) {
+    GlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        cornerRadius = 18.dp,
+        elevated = true
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Drag grip — long-press anywhere in this 40dp hit-target to
+            // start a drag. The grip carries the only drag-start gesture,
+            // so taps elsewhere on the row never accidentally initiate a
+            // reorder (which would conflict with the remove button below).
+            Box(
+                modifier = dragHandleModifier
+                    .size(40.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DragHandle,
+                    contentDescription = "Drag to reorder",
+                    tint = Color.White.copy(alpha = 0.6f),
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = getModuleLabel(module),
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
+                ),
+                color = Color.White,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(onClick = onRemove) {
+                Text(
+                    text = "REMOVE",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 1.5.sp
+                    ),
+                    color = Color.White.copy(alpha = 0.7f)
+                )
+            }
+        }
+    }
+}
+
+/** Available (off-list) row: dim, with a single big ADD affordance. */
+@Composable
+private fun OffRow(
+    module: String,
+    onAdd: () -> Unit
+) {
+    GlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        cornerRadius = 18.dp,
+        elevated = false
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // No drag handle here — the row isn't reorderable until added.
+            Spacer(modifier = Modifier.width(44.dp))
+            Text(
+                text = getModuleLabel(module),
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
+                ),
+                color = Color.White.copy(alpha = 0.6f),
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = onAdd) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Add to home screen",
+                    tint = Color.White.copy(alpha = 0.85f)
+                )
             }
         }
     }

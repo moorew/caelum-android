@@ -181,4 +181,10 @@ dependencies {
     // KEX/HostKey algorithms (ed25519, curve25519-sha256) that the original
     // unmaintained JSch chokes on against current OpenSSH defaults.
     implementation("com.github.mwiede:jsch:0.2.21")
+
+    // Reorderable LazyColumn/LazyRow for the layout-editor drag-to-reorder.
+    // Tiny (~70 KB), zero-transitive-dep, MIT-licensed; integrates cleanly
+    // with the standard LazyListState so we keep using LazyColumn for the
+    // scroll viewport.
+    implementation("sh.calvin.reorderable:reorderable:2.4.3")
 }
