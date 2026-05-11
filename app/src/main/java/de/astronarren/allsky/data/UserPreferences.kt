@@ -127,32 +127,27 @@ class UserPreferences(private val context: Context) {
     }
 
     /**
-     * Returns the effective home layout, applying any necessary migrations:
+     * Returns the effective home layout.
      *
-     *   - If the saved layout version is older than [CURRENT_LAYOUT_VERSION]
-     *     (i.e. the canonical order has changed), reset to [DEFAULT_LAYOUT].
-     *     This is how MOON moves to the bottom for users upgrading from 2.1.x.
-     *   - Otherwise honour the saved layout and append any modules added in a
-     *     later version that aren't yet present (BEST_VIEWING is special-cased
-     *     to slot in just below LIVE_VIEW).
+     * If the saved layout version is older than [CURRENT_LAYOUT_VERSION] —
+     * the canonical order has changed in a meaningful way, e.g. MOON moving
+     * to the bottom in v2 — we reset to [DEFAULT_LAYOUT]. Bumping
+     * [CURRENT_LAYOUT_VERSION] is also the mechanism for introducing brand
+     * new modules to existing installs: pre-bump users see the new module
+     * because they're reset to DEFAULT; post-bump users save explicitly.
+     *
+     * What we deliberately do NOT do is re-append any DEFAULT_LAYOUT module
+     * missing from the saved list. That used to live here and silently
+     * undid every uncheck the user made in the layout editor — the moment
+     * they hit SAVE, the saved list went round trip through this function
+     * and the unchecked modules came back. Trust the saved list verbatim.
      */
     private fun resolveLayout(saved: String?, version: Int?): List<String> {
         val versionOk = (version ?: 0) >= CURRENT_LAYOUT_VERSION
         if (!versionOk || saved.isNullOrBlank()) {
             return DEFAULT_LAYOUT.split(",")
         }
-        val list = saved.split(",").filter { it.isNotBlank() }.toMutableList()
-        DEFAULT_LAYOUT.split(",").forEach { module ->
-            if (!list.contains(module)) {
-                if (module == "BEST_VIEWING") {
-                    val index = list.indexOf("LIVE_VIEW")
-                    if (index != -1) list.add(index + 1, module) else list.add(0, module)
-                } else {
-                    list.add(module)
-                }
-            }
-        }
-        return list
+        return saved.split(",").filter { it.isNotBlank() }
     }
 
     suspend fun saveUsername(username: String) {
