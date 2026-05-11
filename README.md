@@ -1,6 +1,10 @@
-# Allsky Companion App
+# Caelum
+
+> _Caelum_ — Latin for "the heavens" — and the name of a small southern constellation. The four-star constellation glyph is the launcher icon.
 
 An Android companion app for the [Allsky Camera Project](https://github.com/AllskyTeam/allsky), providing a convenient way to monitor your Allsky camera, view weather data, and access historical captures.
+
+> **Renamed in 3.0.0.** This project was previously released as *Allsky Companion App*. The package id (`de.astronarren.allsky`) is unchanged, so existing installs receive 3.0.0 as a normal in-place update — no reinstall, no settings loss.
 
 ## Features
 
@@ -28,7 +32,7 @@ This project is a fork of the [Allsky Companion App](https://github.com/acocalyp
 
 ## Installation
 
-1. Download the latest APK from the [Releases](https://github.com/acocalypso/allskyviewer-companion/releases) page
+1. Download the latest APK from the [Releases](https://github.com/moorew/caelum-android/releases) page
 2. Install on your Android device
 3. Follow the setup wizard to configure your Allsky URL and OpenWeather API key
 
