@@ -2,11 +2,16 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
 
     <!--
-        Splash/launch theme used until Compose composes the first frame.
-        Anchored to a dark navy so the app no longer flashes white on cold start.
-        Status & navigation bars are transparent — Compose draws edge-to-edge.
+        Splash / launch theme used by the Activity window until Compose draws
+        the first frame. Anchored to a dark navy so cold start no longer
+        flashes white. Status & navigation bars are transparent — Compose
+        draws edge-to-edge over them.
+
+        AppCompat is the base because it is already a project dependency; the
+        Compose Material 3 design system applies via AllskyTheme as soon as
+        setContent runs.
     -->
-    <style name="Theme.Allsky" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Theme.Allsky" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:windowBackground">@color/launch_background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
