@@ -77,6 +77,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import de.astronarren.allsky.ui.theme.*
 import androidx.navigation.NavController
+import de.astronarren.allsky.ui.modules.FocusModule
+import de.astronarren.allsky.ui.modules.TonightModule
+import de.astronarren.allsky.viewmodel.FocusViewModel
+import de.astronarren.allsky.viewmodel.FocusViewModelFactory
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -142,6 +146,14 @@ fun MainScreen(
 
     val mainLayout by userPreferences.getMainLayoutFlow().collectAsStateWithLifecycle(
         initialValue = listOf("LIVE_VIEW", "BEST_VIEWING", "WEATHER", "TIMELAPSES", "METEORS", "IMAGES", "KEOGRAMS", "STARTRAILS", "MOON")
+    )
+
+    // FocusViewModel lives at MainScreen scope so the home-screen FOCUS module
+    // and the standalone Focus screen don't each re-probe the rig on every
+    // navigation. The init block runs one auto-probe; subsequent moves use
+    // the cached settings until the user edits credentials.
+    val focusViewModel: FocusViewModel = viewModel(
+        factory = FocusViewModelFactory(userPreferences)
     )
     
     val allskyUrl by userPreferences.getAllskyUrlFlow().collectAsStateWithLifecycle(initialValue = "")
@@ -628,6 +640,19 @@ fun MainScreen(
                                         onMediaClick = { media -> imageViewerViewModel.showImage(media.url) },
                                         isLoading = allskyUiState.isLoading,
                                         error = allskyUiState.error
+                                    )
+                                }
+                                "TONIGHT" -> {
+                                    TonightModule()
+                                }
+                                "FOCUS" -> {
+                                    // FocusModule self-collapses when the rig
+                                    // isn't reachable, so the user sees a hole
+                                    // only on intentional config issues —
+                                    // never on routine network blips.
+                                    FocusModule(
+                                        viewModel = focusViewModel,
+                                        onOpenFocusScreen = { navController.navigate("focus") }
                                     )
                                 }
                             }

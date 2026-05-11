@@ -5,6 +5,32 @@ documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-05-11
+### Added
+- **Focus module on the home screen.** Once the focus motor feature is
+  enabled AND the rig is reachable on screen open, a compact jog card
+  appears in the layout editor's AVAILABLE section. Add it to your home
+  screen and you get four step-size presets (64 / 256 / 1024 / 4096), the
+  BACK / FORWARD jog buttons, and a one-line move-result pill — without
+  navigating to the standalone Focus screen. OPEN in the top-right jumps
+  there for credential edits and the wider preset list. Conditional
+  visibility: when the rig is unreachable, the card collapses to zero
+  height rather than reserving a hole.
+- **Tonight card.** New home-screen module surfacing the strongest active
+  annual meteor shower with days-from-peak context (ZHR pill scales its
+  green tint with shower strength — Geminids at 150 reads brighter than
+  Ursids at 10). Backed by a built-in IMO 2024 working-list table, so
+  zero network calls. Designed as a durable replacement for the
+  originally-planned ISS-pass alert idea — a generic "what's worth
+  looking at tonight" board that gracefully outlives any single space
+  station's lifetime. Visible planets, moon rise/set, and bright
+  satellite passes are queued for future slices in the same card.
+
+### Changed
+- **Layout editor catalogue.** TONIGHT joins the BASE module list; FOCUS
+  is appended dynamically only when the focus feature is enabled, so
+  users who never opt in never see a dead row.
+
 ## [3.0.1] - 2026-05-11
 ### Fixed
 - **Layout editor: saved removals stick.** Unchecking a module and hitting

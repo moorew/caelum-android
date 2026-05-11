@@ -26,10 +26,11 @@ import kotlinx.coroutines.launch
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
-val ALL_MODULES = listOf(
+private val BASE_MODULES = listOf(
     "LIVE_VIEW",
     "BEST_VIEWING",
     "WEATHER",
+    "TONIGHT",
     "MOON",
     "TIMELAPSES",
     "METEORS",
@@ -38,16 +39,26 @@ val ALL_MODULES = listOf(
     "STARTRAILS"
 )
 
+/**
+ * Returns the modules visible in the editor for the current feature flags.
+ * FOCUS only shows up once the user has enabled the focus motor feature —
+ * the editor would otherwise dangle a dead row for everyone else.
+ */
+private fun allModules(focusEnabled: Boolean): List<String> =
+    if (focusEnabled) BASE_MODULES + "FOCUS" else BASE_MODULES
+
 private fun getModuleLabel(key: String): String = when (key) {
     "LIVE_VIEW" -> "Live View"
     "BEST_VIEWING" -> "Best Viewing Night"
     "WEATHER" -> "Weather Forecast"
+    "TONIGHT" -> "Tonight"
     "MOON" -> "Moon Phase"
     "TIMELAPSES" -> "Timelapses"
     "METEORS" -> "Meteor Recordings"
     "IMAGES" -> "Raw Images"
     "KEOGRAMS" -> "Keograms"
     "STARTRAILS" -> "Startrails"
+    "FOCUS" -> "Focus Control"
     else -> key
 }
 
@@ -66,9 +77,18 @@ fun LayoutEditorScreen(
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
 
+    // Focus availability gates whether FOCUS appears in the available list.
+    // If the user disables focus after adding it to their layout, the saved
+    // FOCUS entry stays in `onList` (the editor doesn't strip it) — it just
+    // won't render anything on the home screen. That's the cheap fix; a
+    // future polish could auto-prune on save.
+    val focusEnabled by produceState(initialValue = false, userPreferences) {
+        userPreferences.getFocusSettingsFlow().collect { value = it.enabled }
+    }
+
     var onList by remember { mutableStateOf<List<String>>(emptyList()) }
-    val offList by remember {
-        derivedStateOf { ALL_MODULES.filterNot { it in onList } }
+    val offList by remember(focusEnabled) {
+        derivedStateOf { allModules(focusEnabled).filterNot { it in onList } }
     }
 
     LaunchedEffect(Unit) {
@@ -191,7 +211,7 @@ fun LayoutEditorScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     OutlinedButton(
-                        onClick = { onList = ALL_MODULES },
+                        onClick = { onList = allModules(focusEnabled) },
                         modifier = Modifier
                             .weight(1f)
                             .height(52.dp),
