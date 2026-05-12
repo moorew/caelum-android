@@ -120,8 +120,10 @@ class SatelliteRepository(
             maxElevationDeg = getMaxEl(),
             // predict4java names rise/set azimuths after the amateur-radio
             // AOS (Acquisition of Signal) / LOS (Loss of Signal) convention.
-            startAzimuthDeg = getAosAzimuth(),
-            endAzimuthDeg = getLosAzimuth(),
+            // Returned as integer degrees — widen to Double for our domain
+            // type, which keeps the door open for finer-grained sources later.
+            startAzimuthDeg = getAosAzimuth().toDouble(),
+            endAzimuthDeg = getLosAzimuth().toDouble(),
         )
     }
 
