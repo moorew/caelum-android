@@ -5,6 +5,29 @@ documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.6.0] - 2026-05-12
+### Added
+- **3-tap precise calibration.** The calibration screen now has a
+  Quick · 1 Tap / Precise · 3 Taps mode toggle. Precise mode walks you
+  through three numbered taps — a known bright body, due-north on the
+  horizon, then due-east — and runs a 4-parameter Levenberg–Marquardt
+  fit over `(centre x, centre y, radius, rotation)`. Right answer for
+  off-axis lenses or installs where the fisheye circle isn't centred in
+  the frame.
+- **Confidence badge.** Precise calibrations now report the RMS residual
+  of the fit (e.g. `Rotation 8.2° · ±0.43° fit`) in the Sky Overlay
+  group on the Settings screen, so you can see at a glance how tight
+  the solve is. Quick (1-tap) entries continue to show only the
+  rotation — a single observation underdetermines the residual.
+- **Solver fallback.** If the 3-tap fit produces parameters outside the
+  image bounds (e.g. degenerate tap geometry), the app silently falls
+  back to a quick rotation-only solve from the body tap and tells you
+  in the snackbar, so a misaimed precise attempt never leaves you with
+  no calibration at all.
+
+### Coming next
+- Satellite-pass arcs and meteor-shower radiants on the live overlay.
+
 ## [3.5.0] - 2026-05-12
 ### Added
 - **Live sky overlay (v1).** The home-screen live image now paints the Moon
@@ -21,12 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   handles forward (`altAz → pixel`), inverse (`pixel → altAz`) and both
   a 1-tap rotation-only solver and a 4-parameter Levenberg–Marquardt
   fit for the (not-yet-exposed) 3-tap precise calibration coming next.
-
-### Coming next
-- 3-tap precise calibration (Sun + due-north horizon + due-east horizon),
-  for installs where the lens isn't perfectly centred. Solver is already
-  in `FisheyeProjection.preciseCalibrate`; only the UI is pending.
-- Satellite-pass arcs and meteor-shower radiants on the live overlay.
 
 ## [3.4.0] - 2026-05-11
 ### Added

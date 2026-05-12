@@ -317,8 +317,14 @@ fun SettingsScreen(
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
+                                    // Precise calibrations carry an RMS
+                                    // residual; quick (1-tap) ones don't —
+                                    // append it only when present so the
+                                    // line stays clean for the common case.
                                     text = if (fisheyeCalibration.isSolved) {
-                                        "Rotation %.1f°".format(fisheyeCalibration.northOffsetDeg)
+                                        val rms = fisheyeCalibration.rmsErrorDeg
+                                        val base = "Rotation %.1f°".format(fisheyeCalibration.northOffsetDeg)
+                                        if (rms != null) "$base · ±%.2f° fit".format(rms) else base
                                     } else {
                                         "One tap on Sun / Moon / bright planet"
                                     },
