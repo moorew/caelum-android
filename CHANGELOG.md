@@ -5,6 +5,28 @@ documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] - 2026-05-11
+### Added
+- **Tonight card: tap to learn more.** Tap the Tonight card and it
+  expands inline to show a curated 2-3 sentence description of the
+  active shower — parent body (asteroid 3200 Phaethon for the Geminids,
+  Halley's Comet for both Eta Aquariids and Orionids, the 33-year storm
+  cycle of comet 55P/Tempel–Tuttle behind the Leonids, and so on),
+  radiant constellation, and what makes the shower notable. A "Learn
+  more on Wikipedia ↗" button hands the canonical en.wikipedia.org URL
+  to the user's default browser via Intent.ACTION_VIEW — no in-app
+  webview, no extra dependency. A subtle chevron in the card header
+  rotates 180° when expanded to telegraph the tap target. On quiet
+  nights (no active shower) the card stays non-tappable to avoid
+  dangling a useless target.
+
+### Notes
+- Why curated text rather than an AI call: the headline annual showers
+  are a fixed set of ten, so a hand-written blurb per row is cheaper
+  than any API integration and immune to hallucinated radiants or peak
+  rates. Same shape will accommodate planet / moon / aurora /
+  satellite-pass rows when those data sources land.
+
 ## [3.1.0] - 2026-05-11
 ### Added
 - **Focus module on the home screen.** Once the focus motor feature is
