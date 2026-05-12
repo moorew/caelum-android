@@ -118,8 +118,10 @@ class SatelliteRepository(
             tca = getTCA().toInstant(),
             end = getEndTime().toInstant(),
             maxElevationDeg = getMaxEl(),
-            startAzimuthDeg = getStartAzimuth(),
-            endAzimuthDeg = getEndAzimuth(),
+            // predict4java names rise/set azimuths after the amateur-radio
+            // AOS (Acquisition of Signal) / LOS (Loss of Signal) convention.
+            startAzimuthDeg = getAosAzimuth(),
+            endAzimuthDeg = getLosAzimuth(),
         )
     }
 
