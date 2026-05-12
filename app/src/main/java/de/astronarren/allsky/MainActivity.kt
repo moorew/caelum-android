@@ -10,6 +10,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.work.Constraints
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
@@ -193,7 +194,20 @@ class MainActivity : ComponentActivity() {
                                     userPreferences = userPreferences,
                                     languageManager = languageManager,
                                     updateViewModel = updateViewModel,
-                                    onNavigateBack = { navController.popBackStack() }
+                                    onNavigateBack = { navController.popBackStack() },
+                                    onNavigateToCalibration = { navController.navigate("calibration") },
+                                )
+                            }
+                            composable("calibration") {
+                                // The calibration screen reuses Coil's memory cache by
+                                // requesting the same URL the home-screen live tile is
+                                // already showing — that's the `streamKey` (no cache
+                                // buster). Empty if the user has never loaded a frame.
+                                val liveImageState by liveImageViewModel.uiState.collectAsStateWithLifecycle()
+                                de.astronarren.allsky.ui.components.CalibrationScreen(
+                                    userPreferences = userPreferences,
+                                    liveImageUrl = liveImageState.streamKey ?: "",
+                                    onNavigateBack = { navController.popBackStack() },
                                 )
                             }
                             composable("about") {

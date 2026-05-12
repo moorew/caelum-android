@@ -37,6 +37,22 @@ class UserPreferences(private val context: Context) {
         private val FOCUS_HTTP_ENDPOINT = stringPreferencesKey("focus_http_endpoint")
         private val FOCUS_DEFAULT_STEPS = intPreferencesKey("focus_default_steps")
 
+        // ----- Live-image sky overlay + fisheye calibration -----
+        // OVERLAY toggles the moon/planet/satellite markers drawn on top of
+        // the live image. The four FISHEYE_* keys persist the calibration
+        // solved on the calibration screen — stored as doubles encoded into
+        // strings so a future format change (extra distortion coefficient,
+        // confidence weight…) can be added without a migration. SOLVED_AT is
+        // 0 when no calibration has been performed; the renderer treats that
+        // as "fall back to the default inscribed-circle geometry, north up".
+        private val SKY_OVERLAY_ENABLED = booleanPreferencesKey("sky_overlay_enabled")
+        private val FISHEYE_CX_FRAC = stringPreferencesKey("fisheye_cx_frac")
+        private val FISHEYE_CY_FRAC = stringPreferencesKey("fisheye_cy_frac")
+        private val FISHEYE_RADIUS_FRAC = stringPreferencesKey("fisheye_radius_frac")
+        private val FISHEYE_NORTH_OFFSET_DEG = stringPreferencesKey("fisheye_north_offset_deg")
+        private val FISHEYE_SOLVED_AT_MS = longPreferencesKey("fisheye_solved_at_ms")
+        private val FISHEYE_RMS_ERROR_DEG = stringPreferencesKey("fisheye_rms_error_deg")
+
         // ----- Sky-condition push alerts (off by default) -----
         // The user opts in via the drawer toggle; when on, the WeatherWorker
         // fires a single notification on the day tonight's rating transitions
@@ -305,6 +321,56 @@ class UserPreferences(private val context: Context) {
             p[FOCUS_SCRIPT_PATH] = settings.scriptPath
             p[FOCUS_HTTP_ENDPOINT] = settings.httpEndpoint
             p[FOCUS_DEFAULT_STEPS] = settings.defaultSteps
+        }
+    }
+
+    // -------------------- Sky overlay + fisheye calibration --------------------
+
+    fun getSkyOverlayEnabledFlow(): Flow<Boolean> {
+        return context.dataStore.data.map { it[SKY_OVERLAY_ENABLED] ?: false }
+    }
+
+    suspend fun setSkyOverlayEnabled(enabled: Boolean) {
+        context.dataStore.edit { p -> p[SKY_OVERLAY_ENABLED] = enabled }
+    }
+
+    /**
+     * Returns the persisted fisheye calibration, or
+     * [de.astronarren.allsky.data.astro.FisheyeCalibration.DEFAULT_INSCRIBED]
+     * when nothing has been saved yet. The renderer can rely on this — every
+     * field is always populated — and the `isSolved` flag tells the UI
+     * whether to encourage the user to calibrate.
+     */
+    fun getFisheyeCalibrationFlow(): Flow<de.astronarren.allsky.data.astro.FisheyeCalibration> {
+        return context.dataStore.data.map { p ->
+            val solvedAt = p[FISHEYE_SOLVED_AT_MS] ?: 0L
+            if (solvedAt <= 0L) {
+                de.astronarren.allsky.data.astro.FisheyeCalibration.DEFAULT_INSCRIBED
+            } else {
+                de.astronarren.allsky.data.astro.FisheyeCalibration(
+                    cxFrac = p[FISHEYE_CX_FRAC]?.toDoubleOrNull() ?: 0.5,
+                    cyFrac = p[FISHEYE_CY_FRAC]?.toDoubleOrNull() ?: 0.5,
+                    radiusFrac = p[FISHEYE_RADIUS_FRAC]?.toDoubleOrNull() ?: 0.5,
+                    northOffsetDeg = p[FISHEYE_NORTH_OFFSET_DEG]?.toDoubleOrNull() ?: 0.0,
+                    solvedAtEpochMs = solvedAt,
+                    rmsErrorDeg = p[FISHEYE_RMS_ERROR_DEG]?.toDoubleOrNull(),
+                )
+            }
+        }
+    }
+
+    suspend fun saveFisheyeCalibration(cal: de.astronarren.allsky.data.astro.FisheyeCalibration) {
+        context.dataStore.edit { p ->
+            p[FISHEYE_CX_FRAC] = cal.cxFrac.toString()
+            p[FISHEYE_CY_FRAC] = cal.cyFrac.toString()
+            p[FISHEYE_RADIUS_FRAC] = cal.radiusFrac.toString()
+            p[FISHEYE_NORTH_OFFSET_DEG] = cal.northOffsetDeg.toString()
+            p[FISHEYE_SOLVED_AT_MS] = cal.solvedAtEpochMs
+            if (cal.rmsErrorDeg != null) {
+                p[FISHEYE_RMS_ERROR_DEG] = cal.rmsErrorDeg.toString()
+            } else {
+                p.remove(FISHEYE_RMS_ERROR_DEG)
+            }
         }
     }
 }

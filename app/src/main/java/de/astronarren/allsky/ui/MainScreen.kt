@@ -169,6 +169,17 @@ fun MainScreen(
     val apiKey by userPreferences.getApiKeyFlow().collectAsStateWithLifecycle(initialValue = "")
     val skyAlertsEnabled by userPreferences.getSkyAlertsEnabledFlow().collectAsStateWithLifecycle(initialValue = false)
 
+    // Sky-overlay state. Both flows always emit (the calibration flow falls
+    // back to the inscribed-circle default), so the overlay Composable can
+    // unconditionally read them and decide whether to paint itself.
+    val skyOverlayEnabled by userPreferences.getSkyOverlayEnabledFlow()
+        .collectAsStateWithLifecycle(initialValue = false)
+    val fisheyeCalibration by userPreferences.getFisheyeCalibrationFlow()
+        .collectAsStateWithLifecycle(
+            initialValue = de.astronarren.allsky.data.astro.FisheyeCalibration.DEFAULT_INSCRIBED
+        )
+    val tonightState by tonightViewModel.state.collectAsStateWithLifecycle()
+
     // Runtime POST_NOTIFICATIONS permission. We launch the system prompt
     // the first time the user flips the alerts toggle ON. If denied, the
     // toggle stays on but NotificationHelper.canPost() silently no-ops —
@@ -399,6 +410,10 @@ fun MainScreen(
                                                                         onSuccess = { _, result ->
                                                                             val bmp = (result.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
                                                                             if (bmp != null) {
+                                                                                // Push intrinsic image size into the VM so the
+                                                                                // SkyOverlay can apply the ContentScale.Crop
+                                                                                // transform to fractional fisheye coords.
+                                                                                liveImageViewModel.setImageSize(bmp.width, bmp.height)
                                                                                 androidx.palette.graphics.Palette.from(bmp).generate { p ->
                                                                                     val dom = p?.dominantSwatch?.rgb
                                                                                     val darkMuted = p?.darkMutedSwatch?.rgb
@@ -421,7 +436,19 @@ fun MainScreen(
                                                             }
                                                         }
                                                     }
-                                                    
+
+                                                    // Sky overlay — moon and naked-eye planets, projected through the
+                                                    // saved fisheye calibration. No-ops when disabled or before the
+                                                    // first image arrives, so it's safe to always include in the tree.
+                                                    SkyOverlay(
+                                                        enabled = skyOverlayEnabled,
+                                                        calibration = fisheyeCalibration,
+                                                        imageWidthPx = liveImageState.imageWidthPx,
+                                                        imageHeightPx = liveImageState.imageHeightPx,
+                                                        moon = tonightState.moonHorizontal,
+                                                        planets = tonightState.visiblePlanets,
+                                                    )
+
                                                     // Stream Error Overlay
                                                     if (liveImageState.error != null) {
                                                         Surface(

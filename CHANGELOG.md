@@ -5,6 +5,29 @@ documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.0] - 2026-05-12
+### Added
+- **Live sky overlay (v1).** The home-screen live image now paints the Moon
+  and every above-horizon naked-eye planet on top of the actual fisheye
+  frame, in their correct alt/az. Off by default until you calibrate.
+- **One-tap calibration.** Settings → Sky Overlay → Calibrate freezes the
+  current live frame and asks you to tap a single bright body — the Sun
+  by day, the Moon at night, or the brightest naked-eye planet as a
+  fallback. The app already knows where that body *should* be from your
+  location and the time, so a single tap is enough to solve the camera
+  rotation. Calibration survives camera-resolution changes (coordinates
+  are stored as image fractions, not pixels).
+- **Equidistant fisheye projection module.** New `FisheyeProjection`
+  handles forward (`altAz → pixel`), inverse (`pixel → altAz`) and both
+  a 1-tap rotation-only solver and a 4-parameter Levenberg–Marquardt
+  fit for the (not-yet-exposed) 3-tap precise calibration coming next.
+
+### Coming next
+- 3-tap precise calibration (Sun + due-north horizon + due-east horizon),
+  for installs where the lens isn't perfectly centred. Solver is already
+  in `FisheyeProjection.preciseCalibrate`; only the UI is pending.
+- Satellite-pass arcs and meteor-shower radiants on the live overlay.
+
 ## [3.4.0] - 2026-05-11
 ### Added
 - **Tonight card: zenith-centred sky map.** A small always-visible diagram

@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.SatelliteAlt
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -49,7 +50,8 @@ fun SettingsScreen(
     userPreferences: UserPreferences,
     languageManager: LanguageManager,
     updateViewModel: UpdateViewModel,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onNavigateToCalibration: () -> Unit = {},
 ) {
     var urlInput by remember { mutableStateOf("") }
     var stationNameInput by remember { mutableStateOf("") }
@@ -62,6 +64,16 @@ fun SettingsScreen(
     var showLanguageDialog by remember { mutableStateOf(false) }
     var currentLanguage by remember { mutableStateOf(de.astronarren.allsky.utils.AppLanguage.SYSTEM) }
     val updateState by updateViewModel.uiState.collectAsStateWithLifecycle()
+
+    // Sky-overlay group state. Toggle commits on flip (no Save-button delay)
+    // because it's an idempotent boolean — matches the rest of the toggle-
+    // style settings in the app.
+    val skyOverlayEnabled by userPreferences.getSkyOverlayEnabledFlow()
+        .collectAsStateWithLifecycle(initialValue = false)
+    val fisheyeCalibration by userPreferences.getFisheyeCalibrationFlow()
+        .collectAsStateWithLifecycle(
+            initialValue = de.astronarren.allsky.data.astro.FisheyeCalibration.DEFAULT_INSCRIBED
+        )
 
     LaunchedEffect(Unit) {
         currentLanguage = languageManager.getCurrentLanguage()
@@ -238,6 +250,88 @@ fun SettingsScreen(
                             keyboardType = KeyboardType.Number,
                             modifier = Modifier.weight(1f)
                         )
+                    }
+                }
+
+                // ---------------- Sky overlay group ----------------
+                SettingsGroup(title = "Sky Overlay", icon = Icons.Default.Star) {
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        cornerRadius = 20.dp,
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "SHOW MOON & PLANETS",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.Black,
+                                        letterSpacing = 2.sp
+                                    ),
+                                    color = Color.White.copy(alpha = 0.5f),
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (fisheyeCalibration.isSolved) {
+                                        "Overlays computed alt/az onto the live frame"
+                                    } else {
+                                        "Calibrate first so the markers line up"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.White.copy(alpha = 0.7f),
+                                )
+                            }
+                            Switch(
+                                checked = skyOverlayEnabled,
+                                onCheckedChange = { checked ->
+                                    scope.launch { userPreferences.setSkyOverlayEnabled(checked) }
+                                },
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    GlassCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onNavigateToCalibration() },
+                        cornerRadius = 20.dp,
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (fisheyeCalibration.isSolved) "RECALIBRATE…" else "CALIBRATE…",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.Black,
+                                        letterSpacing = 2.sp
+                                    ),
+                                    color = Color.White.copy(alpha = 0.6f),
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (fisheyeCalibration.isSolved) {
+                                        "Rotation %.1f°".format(fisheyeCalibration.northOffsetDeg)
+                                    } else {
+                                        "One tap on Sun / Moon / bright planet"
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = Color.White,
+                                )
+                            }
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = "Open calibration screen",
+                                tint = Color.White.copy(alpha = 0.5f),
+                            )
+                        }
                     }
                 }
 

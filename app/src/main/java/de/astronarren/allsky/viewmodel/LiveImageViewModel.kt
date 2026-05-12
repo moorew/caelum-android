@@ -61,6 +61,23 @@ class LiveImageViewModel(
         }
     }
 
+    /**
+     * Pushed in by MainScreen from the Coil onSuccess listener once the
+     * BitmapDrawable is available. The sky-overlay needs the source image's
+     * intrinsic dimensions to apply the ContentScale.Crop transform when
+     * mapping calibrated alt/az → display-pixel offsets.
+     */
+    fun setImageSize(widthPx: Int, heightPx: Int) {
+        if (widthPx <= 0 || heightPx <= 0) return
+        _uiState.update { current ->
+            if (current.imageWidthPx == widthPx && current.imageHeightPx == heightPx) {
+                current
+            } else {
+                current.copy(imageWidthPx = widthPx, imageHeightPx = heightPx)
+            }
+        }
+    }
+
     private suspend fun updateImage(baseUrl: String? = null) {
         val url = baseUrl ?: userPreferences.getAllskyUrl()
         if (url.isEmpty()) {
