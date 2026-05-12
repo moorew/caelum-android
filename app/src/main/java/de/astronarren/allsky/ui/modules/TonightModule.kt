@@ -16,6 +16,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.NightsStay
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Satellite
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,43 +27,618 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import de.astronarren.allsky.data.astro.AuroraBand
+import de.astronarren.allsky.data.astro.AuroraOutlook
+import de.astronarren.allsky.data.astro.MoonEvents
+import de.astronarren.allsky.data.astro.SatellitePass
 import de.astronarren.allsky.ui.components.GlassCard
+import de.astronarren.allsky.viewmodel.PlanetRow
+import de.astronarren.allsky.viewmodel.TonightUiState
+import de.astronarren.allsky.viewmodel.TonightViewModel
+import java.time.Duration
+import java.time.Instant
 import java.time.LocalDate
 import java.time.Month
 import java.time.MonthDay
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
- * "What's worth looking at tonight" — a durable, future-proof module that
- * supersedes the original ISS-pass overlay idea.
+ * "What's worth looking at tonight" — a multi-row card that aggregates every
+ * location-aware naked-eye astronomy data source we can compute or fetch
+ * cheaply:
  *
- * v1 (this file): meteor-shower lookup against the IMO 2024 working list.
- * Dates are stable year-over-year (radiants are tied to Earth's orbit, not
- * the calendar year), so a hard-coded table is correct and offline. The card
- * surfaces the brightest active shower with days-from-peak context, a
- * curated description, and a "Learn more" link out to Wikipedia.
+ *   - **METEORS** — strongest active annual shower (offline IMO 2024 table)
+ *   - **MOON**    — rise / transit / set today + illumination (offline Meeus)
+ *   - **PLANETS** — naked-eye planets currently above the horizon (offline)
+ *   - **AURORA**  — NOAA SWPC 24h Kp forecast, gated by geomagnetic latitude
+ *   - **PASSES**  — bright satellite passes from CelesTrak TLEs + SGP4
  *
- * Why curated text + web link instead of an AI call:
- *   - The set of headline annual showers is small and fixed (~10), so a
- *     hand-written blurb per row is cheaper than any API integration.
- *   - Astronomy is a domain where hallucinated radiants or peak rates would
- *     be embarrassing; static text doesn't drift.
- *   - Zero infrastructure, zero quotas, works offline, ships today.
+ * Each row is independently collapsible. Rows that have nothing useful to
+ * surface (no active shower, no aurora at this latitude, no bright passes
+ * tonight) hide themselves rather than waste vertical space — so the card
+ * shape adapts to what's actually going on in the sky above the user.
  *
- * Future slices, added without rewriting this module:
- *   - Visible planet round-up (Meeus algorithms; pure local compute)
- *   - Moon rise / set tonight (Meeus chapter 15)
- *   - Bright satellite passes from CelesTrak TLEs (network, cached)
- *   - Aurora KP forecast (NOAA SWPC, opt-in by latitude)
- *
- * Each is its own row in the card. Today we only show one — the active
- * shower — and a "more coming" hint, so the module ships with non-zero value
- * even before the rest of the data sources are wired up.
+ * Location: we read the lat/lon the user set during onboarding (or in
+ * Settings → Location). We deliberately don't ask for runtime GPS — those
+ * coordinates were captured at first launch and a typical home observer's
+ * position doesn't change. If the coordinates are blank, the location-
+ * dependent rows hide and the shower row stays visible by itself.
  */
+
+/**
+ * Public entry point. The legacy zero-arg call site in MainScreen still
+ * compiles because [viewModel] has a default factory.
+ */
+@Composable
+fun TonightModule(
+    viewModel: TonightViewModel,
+    modifier: Modifier = Modifier,
+) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val zone = remember { ZoneId.systemDefault() }
+    val timeFormatter = remember {
+        DateTimeFormatter.ofPattern("HH:mm")
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        GlassCard(
+            modifier = Modifier.fillMaxWidth(),
+            cornerRadius = 24.dp,
+            elevated = true
+        ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                CardHeader()
+                Spacer(modifier = Modifier.height(14.dp))
+
+                val rowsRendered = renderRows(
+                    state = state,
+                    zone = zone,
+                    timeFormatter = timeFormatter,
+                )
+
+                if (!state.isLoading && rowsRendered == 0) {
+                    Text(
+                        "Quiet night. No major shower active and nothing else worth flagging.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.7f)
+                    )
+                }
+
+                if (!state.hasLocation && !state.isLoading) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Set your location in Settings to unlock moon, planets, aurora and satellite passes.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.5f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CardHeader() {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            Icons.Default.AutoAwesome,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            "TONIGHT",
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontWeight = FontWeight.Black,
+                letterSpacing = 3.sp
+            ),
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
+        )
+    }
+}
+
+/**
+ * Render every applicable row in fixed order. Returns the count of rows
+ * actually drawn so the parent can show a "quiet night" message when zero
+ * data sources had anything to surface.
+ */
+@Composable
+private fun ColumnScope.renderRows(
+    state: TonightUiState,
+    zone: ZoneId,
+    timeFormatter: DateTimeFormatter,
+): Int {
+    var drawn = 0
+
+    state.activeShower?.let {
+        if (drawn > 0) RowDivider()
+        MeteorRow(it)
+        drawn++
+    }
+
+    state.moonEvents?.let { events ->
+        if (drawn > 0) RowDivider()
+        MoonRow(events, state.moonIlluminationPercent, zone, timeFormatter)
+        drawn++
+    }
+
+    val planets = state.visiblePlanets
+    if (planets.isNotEmpty()) {
+        if (drawn > 0) RowDivider()
+        PlanetsRow(planets, zone, timeFormatter)
+        drawn++
+    }
+
+    state.aurora?.let { outlook ->
+        if (drawn > 0) RowDivider()
+        AuroraRow(outlook, zone, timeFormatter)
+        drawn++
+    }
+
+    if (state.satellitePasses.isNotEmpty()) {
+        if (drawn > 0) RowDivider()
+        SatelliteRow(state.satellitePasses, zone, timeFormatter)
+        drawn++
+    }
+
+    return drawn
+}
+
+@Composable
+private fun RowDivider() {
+    Spacer(modifier = Modifier.height(12.dp))
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(Color.White.copy(alpha = 0.08f))
+    )
+    Spacer(modifier = Modifier.height(12.dp))
+}
+
+// ---------- Meteor row ----------
+
+@Composable
+private fun MeteorRow(active: ActiveShower) {
+    var expanded by remember { mutableStateOf(false) }
+    val days = active.daysFromPeak
+    val timing = when {
+        days == 0 -> "peaks tonight"
+        days > 0 -> "peaked ${days}d ago"
+        else -> "peaks in ${abs(days)}d"
+    }
+
+    Column(modifier = Modifier.clickable { expanded = !expanded }) {
+        ExpandableRowHeader(
+            icon = Icons.Default.AutoAwesome,
+            label = "METEORS",
+            primaryContent = {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        active.shower.name,
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                        color = Color.White,
+                    )
+                    Text(
+                        timing,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.65f),
+                    )
+                }
+                ZhrPill(active.shower.zhr)
+            },
+            expanded = expanded,
+        )
+        AnimatedVisibility(
+            visible = expanded,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically(),
+        ) {
+            ShowerDetails(active.shower)
+        }
+    }
+}
+
+@Composable
+private fun ZhrPill(zhr: Int) {
+    val pillAlpha = (zhr / 200f).coerceIn(0.18f, 0.5f)
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF66BB6A).copy(alpha = pillAlpha))
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        Text(
+            "ZHR $zhr",
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.Black,
+                letterSpacing = 0.5.sp,
+            ),
+            color = Color.White,
+        )
+    }
+}
+
+@Composable
+private fun ShowerDetails(shower: MeteorShower) {
+    val context = LocalContext.current
+    Column(modifier = Modifier.padding(top = 10.dp)) {
+        Text(
+            text = shower.description,
+            style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
+            color = Color.White.copy(alpha = 0.85f),
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        TextButton(
+            onClick = {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(shower.wikipediaUrl))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                runCatching { context.startActivity(intent) }
+            },
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+        ) {
+            Text(
+                "Learn more on Wikipedia",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Icon(
+                Icons.AutoMirrored.Filled.OpenInNew,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(14.dp),
+            )
+        }
+    }
+}
+
+// ---------- Moon row ----------
+
+@Composable
+private fun MoonRow(
+    events: MoonEvents,
+    illuminationPercent: Int,
+    zone: ZoneId,
+    timeFormatter: DateTimeFormatter,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val riseStr = events.rise?.let { formatLocal(it, zone, timeFormatter) } ?: "—"
+    val setStr = events.set?.let { formatLocal(it, zone, timeFormatter) } ?: "—"
+    val phaseLabel = moonPhaseLabel(illuminationPercent)
+
+    Column(modifier = Modifier.clickable { expanded = !expanded }) {
+        ExpandableRowHeader(
+            icon = Icons.Default.NightsStay,
+            label = "MOON",
+            primaryContent = {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "$phaseLabel · ${illuminationPercent}% lit",
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = Color.White,
+                    )
+                    Text(
+                        "Rises $riseStr · sets $setStr",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.65f),
+                    )
+                }
+            },
+            expanded = expanded,
+        )
+        AnimatedVisibility(
+            visible = expanded,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically(),
+        ) {
+            Column(modifier = Modifier.padding(top = 10.dp)) {
+                events.transit?.let { transit ->
+                    Text(
+                        "Transit (highest in sky) at ${formatLocal(transit, zone, timeFormatter)}, ${events.transitAltitudeDeg.roundToInt()}° altitude.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.85f),
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Bright moonlight washes out fainter stars and meteors. Plan deep-sky targets for hours either side of moonrise/set.",
+                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
+                    color = Color.White.copy(alpha = 0.7f),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Map illuminated-fraction percentage to a friendly phase name. We don't
+ * distinguish waxing/waning here because our moon module doesn't track the
+ * derivative — adding it would mean a second position computation 24h ahead
+ * just to label the row, which isn't worth the code.
+ */
+private fun moonPhaseLabel(percent: Int): String = when {
+    percent < 5 -> "New Moon"
+    percent < 25 -> "Crescent"
+    percent < 55 -> "Quarter"
+    percent < 75 -> "Gibbous"
+    percent < 95 -> "Almost Full"
+    else -> "Full Moon"
+}
+
+// ---------- Planets row ----------
+
+@Composable
+private fun PlanetsRow(
+    planets: List<PlanetRow>,
+    zone: ZoneId,
+    timeFormatter: DateTimeFormatter,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val summary = planets.take(3).joinToString(", ") { it.snapshot.planet.displayName }
+
+    Column(modifier = Modifier.clickable { expanded = !expanded }) {
+        ExpandableRowHeader(
+            icon = Icons.Default.Public,
+            label = "PLANETS",
+            primaryContent = {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        if (planets.size == 1) "Visible: $summary"
+                        else "${planets.size} visible: $summary",
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = Color.White,
+                    )
+                    Text(
+                        "Tap for altitude, magnitude, and rise/set",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.65f),
+                    )
+                }
+            },
+            expanded = expanded,
+        )
+        AnimatedVisibility(
+            visible = expanded,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically(),
+        ) {
+            Column(modifier = Modifier.padding(top = 10.dp)) {
+                planets.forEach { row ->
+                    PlanetDetail(row, zone, timeFormatter)
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlanetDetail(
+    row: PlanetRow,
+    zone: ZoneId,
+    timeFormatter: DateTimeFormatter,
+) {
+    val altDeg = row.snapshot.horizontal.altitudeDeg.roundToInt()
+    val cardinal = row.snapshot.horizontal.cardinal
+    val mag = "%+.1f".format(row.snapshot.apparentMagnitude)
+    val setStr = row.events.set?.let { formatLocal(it, zone, timeFormatter) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            row.snapshot.planet.displayName,
+            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = Color.White,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            "${altDeg}° $cardinal · mag $mag" + (setStr?.let { " · sets $it" } ?: ""),
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White.copy(alpha = 0.75f),
+        )
+    }
+    Text(
+        "In ${row.snapshot.constellation}",
+        style = MaterialTheme.typography.labelSmall,
+        color = Color.White.copy(alpha = 0.5f),
+    )
+}
+
+// ---------- Aurora row ----------
+
+@Composable
+private fun AuroraRow(
+    outlook: AuroraOutlook,
+    zone: ZoneId,
+    timeFormatter: DateTimeFormatter,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val color = auroraColor(outlook.band)
+
+    Column(modifier = Modifier.clickable { expanded = !expanded }) {
+        ExpandableRowHeader(
+            icon = Icons.Default.WbSunny,
+            label = "AURORA",
+            primaryContent = {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "${outlook.band.label} · peak Kp ${"%.1f".format(outlook.peakKp)}",
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = Color.White,
+                    )
+                    Text(
+                        "Around ${formatLocal(outlook.peakAt, zone, timeFormatter)} · geomag lat ${outlook.geomagneticLatitudeDeg.roundToInt()}°",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.65f),
+                    )
+                }
+                KpPill(outlook.peakKp, color)
+            },
+            expanded = expanded,
+        )
+        AnimatedVisibility(
+            visible = expanded,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically(),
+        ) {
+            Text(
+                outlook.band.description,
+                style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
+                color = Color.White.copy(alpha = 0.85f),
+                modifier = Modifier.padding(top = 10.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun KpPill(kp: Double, color: Color) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(color.copy(alpha = 0.35f))
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        Text(
+            "Kp ${"%.1f".format(kp)}",
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.Black,
+                letterSpacing = 0.5.sp,
+            ),
+            color = Color.White,
+        )
+    }
+}
+
+private fun auroraColor(band: AuroraBand): Color = when (band) {
+    AuroraBand.QUIET -> Color(0xFF607D8B)
+    AuroraBand.UNSETTLED -> Color(0xFFFFB300)
+    AuroraBand.ACTIVE -> Color(0xFFFF6F00)
+    AuroraBand.STORM -> Color(0xFFE53935)
+}
+
+// ---------- Satellite row ----------
+
+@Composable
+private fun SatelliteRow(
+    passes: List<SatellitePass>,
+    zone: ZoneId,
+    timeFormatter: DateTimeFormatter,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val next = passes.first()
+
+    Column(modifier = Modifier.clickable { expanded = !expanded }) {
+        ExpandableRowHeader(
+            icon = Icons.Default.Satellite,
+            label = "PASSES",
+            primaryContent = {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "${next.satelliteName} at ${formatLocal(next.start, zone, timeFormatter)}",
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = Color.White,
+                    )
+                    Text(
+                        "${next.pathSummary()} · max ${next.maxElevationDeg.roundToInt()}°",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.65f),
+                    )
+                }
+            },
+            expanded = expanded,
+        )
+        AnimatedVisibility(
+            visible = expanded,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically(),
+        ) {
+            Column(modifier = Modifier.padding(top = 10.dp)) {
+                passes.forEach { pass ->
+                    val dur = Duration.between(pass.start, pass.end).seconds
+                    Text(
+                        text = "${formatLocal(pass.start, zone, timeFormatter)} · ${pass.satelliteName} · ${pass.pathSummary()} · max ${pass.maxElevationDeg.roundToInt()}° · ${dur}s",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.85f),
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Visible passes only — satellite illuminated by sun, observer in twilight. Source: CelesTrak.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.5f),
+                )
+            }
+        }
+    }
+}
+
+// ---------- Common row scaffolding ----------
+
+@Composable
+private fun ExpandableRowHeader(
+    icon: ImageVector,
+    label: String,
+    primaryContent: @Composable RowScope.() -> Unit,
+    expanded: Boolean,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        // Left rail icon — small, dim, lets the row's primary text breathe.
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = Color.White.copy(alpha = 0.55f),
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.Black,
+                letterSpacing = 2.sp,
+            ),
+            color = Color.White.copy(alpha = 0.55f),
+            modifier = Modifier.width(64.dp),
+        )
+        primaryContent()
+        // Per-row chevron rotates on expand, just like the original card-
+        // level chevron used to.
+        val rotation by animateFloatAsState(
+            targetValue = if (expanded) 180f else 0f,
+            label = "tonight-row-chevron",
+        )
+        Icon(
+            Icons.Default.ExpandMore,
+            contentDescription = if (expanded) "Collapse" else "Expand",
+            tint = Color.White.copy(alpha = 0.45f),
+            modifier = Modifier
+                .size(18.dp)
+                .rotate(rotation),
+        )
+    }
+}
+
+private fun formatLocal(
+    instant: Instant,
+    zone: ZoneId,
+    formatter: DateTimeFormatter,
+): String = formatter.format(instant.atZone(zone))
+
+// ---------- Meteor-shower lookup (moved unchanged from the v1 card) ----------
 
 /**
  * Single entry in the meteor-shower lookup table.
@@ -70,7 +649,7 @@ import kotlin.math.abs
  *   [peak] is the night of strongest activity.
  *   [zhr] is the published peak Zenithal Hourly Rate (meteors visible per
  *   hour at the zenith under perfect dark skies).
- *   [description] is the 2-3 sentence blurb shown when the card is
+ *   [description] is the 2-3 sentence blurb shown when the row is
  *   expanded. Facts only — parent body, radiant constellation, what makes
  *   the shower notable. No marketing prose.
  *   [wikipediaUrl] is the canonical en.wikipedia.org article. Opened in the
@@ -253,192 +832,4 @@ private fun daysBetween(from: MonthDay, to: MonthDay, year: Int): Int {
     val a = from.atYear(year)
     val b = to.atYear(year)
     return (b.toEpochDay() - a.toEpochDay()).toInt()
-}
-
-@Composable
-fun TonightModule(modifier: Modifier = Modifier) {
-    // Recompute once on composition. The active shower changes day-to-day,
-    // not by the second, so we don't bother re-keying on time.
-    val active = remember { findActiveShower() }
-
-    // Expansion state lives in the card so each Tonight row can independently
-    // collapse — sets us up for the future planet / moon / aurora rows that
-    // will each carry their own description.
-    var expanded by remember { mutableStateOf(false) }
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-    ) {
-        GlassCard(
-            modifier = if (active != null) {
-                Modifier
-                    .fillMaxWidth()
-                    .clickable { expanded = !expanded }
-            } else {
-                Modifier.fillMaxWidth()
-            },
-            cornerRadius = 24.dp,
-            elevated = true
-        ) {
-            Column(modifier = Modifier.padding(18.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Default.AutoAwesome,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        "TONIGHT",
-                        style = MaterialTheme.typography.labelMedium.copy(
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 3.sp
-                        ),
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
-                        modifier = Modifier.weight(1f)
-                    )
-                    if (active != null) {
-                        // Chevron rotates 180° on expand to telegraph the
-                        // tap target without needing a visible "expand" word.
-                        val rotation by animateFloatAsState(
-                            targetValue = if (expanded) 180f else 0f,
-                            label = "tonight-chevron-rotation"
-                        )
-                        Icon(
-                            Icons.Default.ExpandMore,
-                            contentDescription = if (expanded) "Collapse" else "Expand",
-                            tint = Color.White.copy(alpha = 0.6f),
-                            modifier = Modifier
-                                .size(20.dp)
-                                .rotate(rotation)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                if (active != null) {
-                    ActiveShowerRow(active)
-                    AnimatedVisibility(
-                        visible = expanded,
-                        enter = fadeIn() + expandVertically(),
-                        exit = fadeOut() + shrinkVertically(),
-                    ) {
-                        ShowerDetails(active.shower)
-                    }
-                } else {
-                    Text(
-                        "No major shower active tonight.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.85f)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Roadmap hint — tells users (and our future selves) that
-                // this card is going to grow. Removed once at least two
-                // data sources are wired in.
-                Text(
-                    text = "More — visible planets, moon rise/set, bright satellite passes — coming in future releases.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.4f)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ActiveShowerRow(active: ActiveShower) {
-    val days = active.daysFromPeak
-    val timing = when {
-        days == 0 -> "peaks tonight"
-        days > 0  -> "peaked ${days}d ago"
-        else      -> "peaks in ${abs(days)}d"
-    }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        // ZHR pill — visual weight scales with how strong the shower is.
-        // Geminids (150) gets brighter green than Ursids (10).
-        val pillAlpha = (active.shower.zhr / 200f).coerceIn(0.18f, 0.5f)
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF66BB6A).copy(alpha = pillAlpha))
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-        ) {
-            Text(
-                "ZHR ${active.shower.zhr}",
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 0.5.sp
-                ),
-                color = Color.White
-            )
-        }
-        Spacer(modifier = Modifier.width(10.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                active.shower.name,
-                style = MaterialTheme.typography.titleSmall.copy(
-                    fontWeight = FontWeight.Bold
-                ),
-                color = Color.White
-            )
-            Text(
-                timing,
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.65f)
-            )
-        }
-    }
-}
-
-/**
- * Expanded section: curated description + a button that hands the
- * Wikipedia URL to whatever browser the user has set as default. We use a
- * plain Intent.ACTION_VIEW rather than a Custom Tab to avoid pulling in the
- * androidx.browser dependency just for this one link — most users have a
- * preferred browser and Android's chooser handles the rest.
- */
-@Composable
-private fun ShowerDetails(shower: MeteorShower) {
-    val context = LocalContext.current
-    Column(modifier = Modifier.padding(top = 14.dp)) {
-        Text(
-            text = shower.description,
-            style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
-            color = Color.White.copy(alpha = 0.85f)
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-        TextButton(
-            onClick = {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(shower.wikipediaUrl))
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                // Activity-not-found is vanishingly rare on Android (every
-                // device ships with at least one browser), but guarding
-                // keeps a corrupted ROM from crashing the card.
-                runCatching { context.startActivity(intent) }
-            },
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-        ) {
-            Text(
-                "Learn more on Wikipedia",
-                style = MaterialTheme.typography.labelMedium.copy(
-                    fontWeight = FontWeight.SemiBold
-                ),
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Icon(
-                Icons.AutoMirrored.Filled.OpenInNew,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(14.dp)
-            )
-        }
-    }
 }

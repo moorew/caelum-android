@@ -155,6 +155,14 @@ fun MainScreen(
     val focusViewModel: FocusViewModel = viewModel(
         factory = FocusViewModelFactory(userPreferences)
     )
+
+    // TonightViewModel orchestrates the meteor / moon / planets / aurora /
+    // satellites rows. One viewmodel kicks off all five data sources at
+    // MainScreen scope so we don't refetch on every recomposition of the
+    // TonightModule card.
+    val tonightViewModel: de.astronarren.allsky.viewmodel.TonightViewModel = viewModel(
+        factory = de.astronarren.allsky.viewmodel.TonightViewModelFactory(userPreferences)
+    )
     
     val allskyUrl by userPreferences.getAllskyUrlFlow().collectAsStateWithLifecycle(initialValue = "")
     val stationName by userPreferences.getStationNameFlow().collectAsStateWithLifecycle(initialValue = "")
@@ -643,7 +651,7 @@ fun MainScreen(
                                     )
                                 }
                                 "TONIGHT" -> {
-                                    TonightModule()
+                                    TonightModule(viewModel = tonightViewModel)
                                 }
                                 "FOCUS" -> {
                                     // FocusModule self-collapses when the rig

@@ -5,6 +5,70 @@ documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.0] - 2026-05-11
+### Added
+- **Tonight card: four new location-aware rows.** The card now reads the
+  user's saved latitude/longitude (no new permission prompt — same coords
+  the weather module already uses) and surfaces:
+  - **MOON** — rise / transit / set today at the user's site, illumination
+    %, and a friendly phase label. Pure offline compute (Meeus chapter 47,
+    very-low-precision form, ~0.3° position accuracy).
+  - **PLANETS** — naked-eye planets currently above the horizon at the
+    user's location, sorted brightest first. Each shows altitude/azimuth
+    cardinal, V-band magnitude, set time, and zodiac constellation.
+    Driven by JPL "Approximate Positions of the Planets" Keplerian
+    elements (valid 1800–2050) plus the standard phase-corrected
+    magnitude formulas from the _Astronomical Almanac_.
+  - **AURORA** — NOAA SWPC 3-day planetary-Kp forecast, peak Kp over the
+    next 24 hours. Row is gated by **geomagnetic latitude**: below
+    |45°| geomag (most of mid-US, central Europe) the row hides entirely
+    rather than dangle a permanent "no aurora at your latitude" string.
+    1-hour in-memory cache.
+  - **PASSES** — bright satellite passes for the next 24 hours from the
+    CelesTrak `visual` group (~150 curated naked-eye targets), propagated
+    via SGP4 (predict4java) against the user's lat/lon and filtered to
+    max-elevation ≥ 20°, with the observer in nautical-to-civil twilight
+    at TCA so the satellite is sunlit but the sky is dark. 24-hour TLE
+    cache.
+- **Per-row expansion.** Each row is independently tappable to expand for
+  more detail (full per-planet rundown, descriptive aurora text, all
+  passes rather than just the next, etc.). The card-level expand chevron
+  from 3.2.0 is gone — rows own their own state now.
+
+### Changed
+- **Tonight card: from one row to five.** The single shower row + "More
+  coming in future releases" footer is replaced with a stacked layout
+  where each data source is its own row. Rows hide themselves when there
+  is nothing useful to surface (no active shower, no aurora at this
+  latitude, no bright passes in the next 24h), so the card adapts to the
+  actual sky rather than reserving holes.
+- **Internal: new `data/astro/` package.** Self-contained astronomy
+  primitives (Julian date, sidereal time, eq→horizontal, Bennett
+  refraction, twilight gating, sun position) shared by every row. Pure
+  Kotlin, no Android deps, unit-testable. Three almanacs (Moon, Planets,
+  Meteor showers — the last still lives in `ui/modules/TonightModule.kt`
+  for now) build on top.
+
+### Dependencies
+- Added `uk.me.g4dpz:predict4java:1.1.3` (~80 KB, MIT). Faithful Java
+  port of Vallado's reference SGP4 implementation. Used solely by the
+  satellite-passes row.
+
+### Notes
+- Why we use saved lat/lon and not live GPS: the user already set
+  coordinates during onboarding (geocoded from their station name) and
+  most home observers don't move. Skipping a runtime location prompt
+  keeps the permission surface tight. Travellers can update Settings →
+  Location to reflect their current site.
+- Why low-precision Meeus rather than VSOP87 or DE440: a phone screen
+  cannot tell the difference between a planet at 32.0° altitude and one
+  at 32.04°. The truncated formulas are ~0.5° accurate in longitude,
+  well below display granularity.
+- predict4java is unmaintained since ~2014. Accepted because the SGP4
+  model itself doesn't change, the API is stable Java, and there are no
+  transitive dependencies. If it ever falls off Maven Central we have
+  the option of vendoring it.
+
 ## [3.2.0] - 2026-05-11
 ### Added
 - **Tonight card: tap to learn more.** Tap the Tonight card and it

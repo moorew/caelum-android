@@ -41,8 +41,8 @@ android {
         applicationId = "de.astronarren.allsky"
         minSdk = 29
         targetSdk = 35
-        versionCode = 58
-        versionName = "3.2.0"
+        versionCode = 59
+        versionName = "3.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -187,4 +187,11 @@ dependencies {
     // with the standard LazyListState so we keep using LazyColumn for the
     // scroll viewport.
     implementation("sh.calvin.reorderable:reorderable:2.4.3")
+
+    // SGP4 propagator for the Tonight card's satellite-passes row. Faithful
+    // Java port of Vallado's reference implementation, ~80 KB, MIT-licensed.
+    // Unmaintained since ~2014 but the SGP4 model itself is stable, so the
+    // abandonware risk is acceptable. Used by SatelliteRepository for TLE
+    // parsing + pass prediction against the user's saved lat/lon.
+    implementation("uk.me.g4dpz:predict4java:1.1.3")
 }
