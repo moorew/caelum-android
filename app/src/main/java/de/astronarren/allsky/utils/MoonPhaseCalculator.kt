@@ -1,62 +1,38 @@
 package de.astronarren.allsky.utils
 
-import java.time.LocalDateTime
-import java.time.ZoneOffset
-import kotlin.math.cos
-import kotlin.math.PI
 import de.astronarren.allsky.R
+import de.astronarren.allsky.data.astro.MoonAlmanac
+import java.time.Instant
 
+/**
+ * Thin, backwards-compatible facade in front of
+ * [MoonAlmanac.phaseAt][de.astronarren.allsky.data.astro.MoonAlmanac.phaseAt].
+ *
+ * Historically this class carried its own simple "seconds since the
+ * 2000-01-06 new moon, modulo 29.53 days" model. That gave one answer for the
+ * home-screen moon card while the new Tonight card derived its phase label
+ * from Meeus illumination % — the two disagreed near the phase boundaries
+ * and were genuinely confusing. The fix is to make this object a passthrough
+ * so every surface in the app reads from one source.
+ *
+ * Public API preserved verbatim so [MoonPhaseDisplay] and any future caller
+ * don't need to change. New callers should prefer
+ * [MoonAlmanac.phaseAt] directly — it returns the full bundle without the
+ * round-trip via four method calls.
+ */
 class MoonPhaseCalculator {
     companion object {
-        // Lunar cycle constant in days
-        private const val LUNAR_CYCLE = 29.53058770576
-        
-        // First new moon of 2000 was on January 6 at 18:14 UTC
-        private val NEW_MOON_2000 = LocalDateTime.of(2000, 1, 6, 18, 14)
-            .toEpochSecond(ZoneOffset.UTC)
+        fun calculateMoonPhase(): MoonPhase =
+            MoonAlmanac.phaseAt(Instant.now()).phase
 
-        fun calculateMoonPhase(): MoonPhase {
-            val fraction = getCurrentMoonCycleFraction()
-            
-            return when {
-                fraction < 0.033863193308711 -> MoonPhase.NEW_MOON
-                fraction < 0.216136806691289 -> MoonPhase.WAXING_CRESCENT
-                fraction < 0.283863193308711 -> MoonPhase.FIRST_QUARTER
-                fraction < 0.466136806691289 -> MoonPhase.WAXING_GIBBOUS
-                fraction < 0.533863193308711 -> MoonPhase.FULL_MOON
-                fraction < 0.716136806691289 -> MoonPhase.WANING_GIBBOUS
-                fraction < 0.783863193308711 -> MoonPhase.LAST_QUARTER
-                fraction < 0.966136806691289 -> MoonPhase.WANING_CRESCENT
-                else -> MoonPhase.NEW_MOON
-            }
-        }
+        fun getDaysUntilNewMoon(): Double =
+            MoonAlmanac.phaseAt(Instant.now()).daysUntilNewMoon
 
-        fun getDaysUntilNewMoon(): Double {
-            val fraction = getCurrentMoonCycleFraction()
-            return LUNAR_CYCLE * (1.0 - fraction)
-        }
+        fun getCurrentMoonCycleFraction(): Double =
+            MoonAlmanac.phaseAt(Instant.now()).synodicFraction
 
-        fun getCurrentMoonCycleFraction(): Double {
-            val now = java.time.Instant.now().epochSecond
-            val totalSeconds = now - NEW_MOON_2000
-            val lunarSeconds = LUNAR_CYCLE * 24 * 60 * 60
-            
-            // Get position in current cycle
-            var currentSeconds = totalSeconds % lunarSeconds
-            
-            // Handle dates before 2000
-            if (currentSeconds < 0) {
-                currentSeconds += lunarSeconds
-            }
-            
-            return currentSeconds / lunarSeconds
-        }
-
-        fun getIllumination(): Double {
-            val fraction = getCurrentMoonCycleFraction()
-            val phase = 2.0 * PI * fraction
-            return ((1.0 - cos(phase)) / 2.0) * 100.0
-        }
+        fun getIllumination(): Double =
+            MoonAlmanac.phaseAt(Instant.now()).illuminatedFraction * 100.0
     }
 }
 
@@ -69,4 +45,4 @@ enum class MoonPhase(val stringResId: Int, val emoji: String) {
     WANING_GIBBOUS(R.string.moon_phase_waning_gibbous, "🌖"),
     LAST_QUARTER(R.string.moon_phase_last_quarter, "🌗"),
     WANING_CRESCENT(R.string.moon_phase_waning_crescent, "🌘")
-} 
+}

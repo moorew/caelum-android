@@ -5,6 +5,41 @@ documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.0] - 2026-05-11
+### Added
+- **Tonight card: zenith-centred sky map.** A small always-visible diagram
+  now sits at the top of the Tonight card showing where everything is
+  right now. Centre = zenith, outer ring = horizon, N/E/S/W labelled. The
+  Moon, every above-horizon naked-eye planet, the next visible satellite
+  pass (as a quadratic-Bézier arc through start / max-altitude / end),
+  and the active meteor shower's radiant all plot in their correct alt/az.
+  Three concentric guide rings mark horizon, 30° altitude, and 60°
+  altitude. Equidistant projection — radial distance is proportional to
+  zenith angle, matching the planar fisheye projection we're planning to
+  target for a future overlay on the live allsky frame.
+- **Meteor shower radiant coordinates.** Each entry in the offline shower
+  table now carries its J2000 radiant RA/Dec, projected to observer-local
+  alt/az on demand by the ViewModel. Powers the new sky-map marker and
+  sets up the future "live overlay" work without further data plumbing.
+
+### Changed
+- **Tonight card: row header layout.** The all-caps row label (METEORS,
+  MOON, PLANETS, AURORA, PASSES) used to sit beside the title in a fixed
+  64dp slot, where long titles like "Southern δ Aquariids" or
+  "2 visible: Jupiter, Saturn" would butt right up against it. The label
+  now sits *above* the title in its own line — title text gets the full
+  row width, labels stop colliding, and rows look unified across content
+  lengths.
+- **Moon phase: single source of truth.** The home-screen moon card and
+  the Tonight card moon row used to call into two different calculators
+  — one based on a "seconds since the 2000 new moon, mod 29.53 days"
+  cycle, one based on Meeus illumination percentage. They disagreed near
+  the phase boundaries (one could say "Full Moon" while the other said
+  "Gibbous"). Both now route through a new `MoonAlmanac.phaseAt(now)`
+  that derives the named phase from Meeus illumination + a 1-hour-later
+  sample to decide waxing vs waning. The legacy `MoonPhaseCalculator` is
+  preserved as a thin facade so all callers continue to work unchanged.
+
 ## [3.3.0] - 2026-05-11
 ### Added
 - **Tonight card: four new location-aware rows.** The card now reads the

@@ -4,10 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import de.astronarren.allsky.data.UserPreferences
+import de.astronarren.allsky.data.astro.AstroMath
 import de.astronarren.allsky.data.astro.AuroraOutlook
 import de.astronarren.allsky.data.astro.AuroraRepository
+import de.astronarren.allsky.data.astro.HorizontalCoords
 import de.astronarren.allsky.data.astro.MoonAlmanac
 import de.astronarren.allsky.data.astro.MoonEvents
+import de.astronarren.allsky.data.astro.MoonPhaseInfo
 import de.astronarren.allsky.data.astro.Planet
 import de.astronarren.allsky.data.astro.PlanetAlmanac
 import de.astronarren.allsky.data.astro.PlanetEvents
@@ -82,9 +85,15 @@ class TonightViewModel(
             val moonEvents = withContext(Dispatchers.Default) {
                 MoonAlmanac.riseSetTransit(today, lat, lon, zone)
             }
-            val moonPosition = withContext(Dispatchers.Default) {
-                val jd = de.astronarren.allsky.data.astro.AstroMath.julianDate(now)
-                MoonAlmanac.position(jd)
+            // One unified call: phase name, illumination, synodic fraction.
+            // Also surface the moon's current alt/az for the sky-map header.
+            val moonPhaseInfo = withContext(Dispatchers.Default) {
+                MoonAlmanac.phaseAt(now)
+            }
+            val moonHorizontal = withContext(Dispatchers.Default) {
+                val jd = AstroMath.julianDate(now)
+                val eq = MoonAlmanac.position(jd).equatorial
+                AstroMath.equatorialToHorizontal(eq.raDeg, eq.decDeg, lat, lon, jd)
             }
 
             val planetData = withContext(Dispatchers.Default) {
@@ -95,11 +104,29 @@ class TonightViewModel(
                 }
             }
 
+            // If a shower's active, project its radiant to observer-local
+            // alt/az for the sky-map header. Stays null when there's no
+            // active shower (or when [findActiveShower] returned null).
+            val radiantHorizontal = shower?.let { active ->
+                withContext(Dispatchers.Default) {
+                    val jd = AstroMath.julianDate(now)
+                    AstroMath.equatorialToHorizontal(
+                        raDeg = active.shower.radiantRaDeg,
+                        decDeg = active.shower.radiantDecDeg,
+                        latitudeDeg = lat,
+                        longitudeDeg = lon,
+                        jd = jd,
+                    )
+                }
+            }
+
             _state.update {
                 it.copy(
                     moonEvents = moonEvents,
-                    moonIlluminationPercent = (moonPosition.illuminatedFraction * 100).toInt(),
+                    moonPhase = moonPhaseInfo,
+                    moonHorizontal = moonHorizontal,
                     planets = planetData,
+                    activeShowerRadiant = radiantHorizontal,
                 )
             }
 
@@ -129,9 +156,14 @@ data class TonightUiState(
     val hasLocation: Boolean = false,
 
     val activeShower: ActiveShower? = null,
+    /** Active shower's radiant projected to observer-local alt/az. */
+    val activeShowerRadiant: HorizontalCoords? = null,
 
     val moonEvents: MoonEvents? = null,
-    val moonIlluminationPercent: Int = 0,
+    /** Full named-phase bundle. Null until the moon row has been computed. */
+    val moonPhase: MoonPhaseInfo? = null,
+    /** Current geocentric moon alt/az for the sky-map header. */
+    val moonHorizontal: HorizontalCoords? = null,
 
     val planets: List<PlanetRow> = emptyList(),
 

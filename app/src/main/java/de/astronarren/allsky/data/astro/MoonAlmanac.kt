@@ -1,10 +1,13 @@
 package de.astronarren.allsky.data.astro
 
+import de.astronarren.allsky.utils.MoonPhase
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.ZonedDateTime
+import kotlin.math.PI
+import kotlin.math.acos
 import kotlin.math.asin
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -39,6 +42,71 @@ object MoonAlmanac {
 
     /** Sampling grid for the rise/set scan — every five minutes of the day. */
     private const val SCAN_STEP_MINUTES = 5L
+
+    /** Mean synodic month, days. Used only to estimate days-until-new-moon. */
+    private const val SYNODIC_MONTH_DAYS = 29.53058770576
+
+    /**
+     * Named moon phase + illumination + cycle position for the given instant.
+     *
+     * This is the single source of truth for "what phase is the moon in?":
+     *
+     *   - [illuminatedFraction] comes straight from [position] (Meeus 48.4),
+     *     so it agrees to ~1% with NASA's published values.
+     *   - [isWaxing] is decided by computing illumination one hour later — if
+     *     it's larger, the moon is gaining light. Cheap and unambiguous.
+     *   - [synodicFraction] is the position in the synodic month, 0 = new,
+     *     0.5 = full, 1 = new again. Derived from illumination + isWaxing via
+     *     `illumination = (1 - cos(2π·f)) / 2` (the textbook approximation
+     *     that the legacy [de.astronarren.allsky.utils.MoonPhaseCalculator]
+     *     used directly).
+     *   - [phase] is the 8-way named phase, binned the same way the legacy
+     *     calculator binned cycle fraction so we don't visibly shift the
+     *     phase boundaries when users update.
+     *
+     * Both the home-screen moon card and the Tonight card route through this
+     * function — they cannot disagree.
+     */
+    fun phaseAt(now: Instant): MoonPhaseInfo {
+        val jd = AstroMath.julianDate(now)
+        val cur = position(jd)
+        // Sample 1h later. The moon's illumination changes by ~0.5%/h around
+        // quarter phases — easily enough to detect the sign change, and
+        // negligible compared to our 1% accuracy budget.
+        val later = position(jd + 1.0 / 24.0)
+        val waxing = later.illuminatedFraction >= cur.illuminatedFraction
+
+        // f ∈ [0, 0.5] for the rising half of the cosine; mirror for waning.
+        val arg = (1.0 - 2.0 * cur.illuminatedFraction).coerceIn(-1.0, 1.0)
+        val halfFraction = acos(arg) / (2.0 * PI)
+        val synodic = if (waxing) halfFraction else 1.0 - halfFraction
+
+        return MoonPhaseInfo(
+            phase = classifyPhase(synodic),
+            illuminatedFraction = cur.illuminatedFraction,
+            synodicFraction = synodic,
+            isWaxing = waxing,
+            daysUntilNewMoon = SYNODIC_MONTH_DAYS * (1.0 - synodic),
+        )
+    }
+
+    /**
+     * Bin synodic-month fraction to one of the 8 named phases. Boundaries
+     * intentionally match the legacy
+     * [de.astronarren.allsky.utils.MoonPhaseCalculator] so existing users
+     * don't see the phase label shift when this code lands.
+     */
+    private fun classifyPhase(f: Double): MoonPhase = when {
+        f < 0.033863193308711 -> MoonPhase.NEW_MOON
+        f < 0.216136806691289 -> MoonPhase.WAXING_CRESCENT
+        f < 0.283863193308711 -> MoonPhase.FIRST_QUARTER
+        f < 0.466136806691289 -> MoonPhase.WAXING_GIBBOUS
+        f < 0.533863193308711 -> MoonPhase.FULL_MOON
+        f < 0.716136806691289 -> MoonPhase.WANING_GIBBOUS
+        f < 0.783863193308711 -> MoonPhase.LAST_QUARTER
+        f < 0.966136806691289 -> MoonPhase.WANING_CRESCENT
+        else -> MoonPhase.NEW_MOON
+    }
 
     /**
      * Geocentric apparent equatorial position of the Moon at the given JD.
@@ -220,3 +288,25 @@ data class MoonEvents(
     /** Peak altitude during the day at the observer's site, degrees. */
     val transitAltitudeDeg: Double,
 )
+
+/**
+ * Bundle returned by [MoonAlmanac.phaseAt]. Carries everything any UI in the
+ * app needs about "where is the moon in its cycle right now" so that the
+ * different surfaces (home-screen card, Tonight card, future widgets) cannot
+ * possibly disagree with each other.
+ */
+data class MoonPhaseInfo(
+    /** 8-way named phase, suitable for display. */
+    val phase: MoonPhase,
+    /** Geocentric illuminated fraction of the lunar disc, 0..1. */
+    val illuminatedFraction: Double,
+    /** Position in the synodic month: 0 = new, 0.5 = full, 1 = new again. */
+    val synodicFraction: Double,
+    /** Whether illumination is increasing toward full. */
+    val isWaxing: Boolean,
+    /** Calendar days until the next new moon — uses mean synodic month. */
+    val daysUntilNewMoon: Double,
+) {
+    /** Convenience: rounded percentage suitable for "60% lit" style UI. */
+    val illuminatedPercent: Int get() = (illuminatedFraction * 100.0).toInt()
+}
