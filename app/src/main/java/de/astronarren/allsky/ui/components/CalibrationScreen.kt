@@ -264,8 +264,8 @@ fun CalibrationScreen(
                             }
                             val cal = FisheyeProjection.quickCalibrate(
                                 observedBody = tgt.coords,
-                                tappedPxFrac = imgX / img.width,
-                                tappedPyFrac = imgY / img.height,
+                                tappedPxFrac = (imgX / img.width).toDouble(),
+                                tappedPyFrac = (imgY / img.height).toDouble(),
                             )
                             scope.launch {
                                 userPreferences.saveFisheyeCalibration(cal)
