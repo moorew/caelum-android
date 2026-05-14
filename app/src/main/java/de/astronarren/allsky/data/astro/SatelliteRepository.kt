@@ -1,5 +1,8 @@
 package de.astronarren.allsky.data.astro
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
 import uk.me.g4dpz.satellite.GroundStationPosition
 import uk.me.g4dpz.satellite.PassPredictor
 import uk.me.g4dpz.satellite.SatPassTime
@@ -53,8 +56,8 @@ class SatelliteRepository(
         latitudeDeg: Double,
         longitudeDeg: Double,
         altitudeMeters: Double = 0.0,
-    ): List<SatellitePass>? {
-        val tles = tles() ?: return null
+    ): List<SatellitePass>? = withContext(Dispatchers.Default) {
+        val tles = tles() ?: return@withContext null
         val groundStation = GroundStationPosition(latitudeDeg, longitudeDeg, altitudeMeters)
         val now = clock()
         val cutoff = now.plusSeconds(24 * 3600)
@@ -73,7 +76,7 @@ class SatelliteRepository(
             }.getOrDefault(emptyList())
         }
 
-        return passes
+        passes
             .sortedByDescending { it.maxElevationDeg }
             .take(MAX_PASSES_SHOWN)
             .sortedBy { it.start }
@@ -131,7 +134,13 @@ class SatelliteRepository(
         val now = clock()
         val cached = tleCache
         if (cached != null && now.isBefore(cached.expires)) return cached.tles
-        val fresh = runCatching { fetchAndParse() }.getOrNull() ?: return cached?.tles
+        val fresh = try {
+            fetchAndParse()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return cached?.tles
+        }
         tleCache = TleCacheEntry(
             tles = fresh,
             expires = now.plusSeconds(24 * 3600),
@@ -139,13 +148,13 @@ class SatelliteRepository(
         return fresh
     }
 
-    private suspend fun fetchAndParse(): List<TLE> {
+    private suspend fun fetchAndParse(): List<TLE> = withContext(Dispatchers.IO) {
         val body = service.getTleGroup()
         val lines = body.split('\n').map { it.trimEnd('\r') }.filter { it.isNotEmpty() }
-        if (lines.size < 3) return emptyList()
+        if (lines.size < 3) return@withContext emptyList()
         // CelesTrak TLEs come in 3-line groups: name, line1, line2. Any
         // partial group at EOF is silently dropped.
-        return (0 until lines.size - 2 step 3).mapNotNull { i ->
+        (0 until lines.size - 2 step 3).mapNotNull { i ->
             runCatching {
                 TLE(arrayOf(lines[i], lines[i + 1], lines[i + 2]))
             }.getOrNull()

@@ -7,6 +7,7 @@ import android.os.Environment
 import android.widget.Toast
 import de.astronarren.allsky.data.UserPreferences
 import de.astronarren.allsky.network.AllskyAuth
+import kotlinx.coroutines.CancellationException
 
 class DownloadHelper(
     private val context: Context,
@@ -29,10 +30,7 @@ class DownloadHelper(
                 .setAllowedOverMetered(true)
                 .setAllowedOverRoaming(true)
 
-            val auth = urlAuth ?: AllskyAuth.basicAuthHeader(
-                userPreferences.getUsername(),
-                userPreferences.getPassword()
-            )
+            val auth = urlAuth ?: AllskyAuth.storedAuthHeaderForUrl(cleanUrl, userPreferences)
             if (auth != null) {
                 request.addRequestHeader("Authorization", auth)
             }
@@ -41,6 +39,8 @@ class DownloadHelper(
             downloadManager.enqueue(request)
 
             Toast.makeText(context, "Download started...", Toast.LENGTH_SHORT).show()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Toast.makeText(context, "Download failed: ${e.message}", Toast.LENGTH_LONG).show()
         }

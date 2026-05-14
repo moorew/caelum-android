@@ -10,10 +10,11 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import de.astronarren.allsky.R
 import de.astronarren.allsky.data.dataStore
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
 import java.util.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -48,10 +49,11 @@ class LanguageManager(
     private val onLanguageChanged: (() -> Unit)? = null
 ) {
     private val LANGUAGE_KEY = stringPreferencesKey("selected_language")
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var isChangingLanguage = false
 
     init {
-        CoroutineScope(Dispatchers.Main).launch {
+        scope.launch {
             val savedLanguage = getSavedLanguage()
             if (savedLanguage != AppLanguage.SYSTEM) {
                 applyLanguage(savedLanguage)
@@ -63,7 +65,7 @@ class LanguageManager(
         if (isChangingLanguage) return
         isChangingLanguage = true
         
-        CoroutineScope(Dispatchers.Main).launch {
+        scope.launch {
             try {
                 // Only apply and save if it's different from current
                 val currentLanguage = getSavedLanguage()
@@ -81,6 +83,10 @@ class LanguageManager(
                 isChangingLanguage = false
             }
         }
+    }
+
+    fun close() {
+        scope.cancel()
     }
 
     private fun applyLanguage(language: AppLanguage) {

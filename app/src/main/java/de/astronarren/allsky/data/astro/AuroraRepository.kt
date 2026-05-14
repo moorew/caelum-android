@@ -1,6 +1,9 @@
 package de.astronarren.allsky.data.astro
 
 import com.google.gson.JsonParser
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneOffset
@@ -90,7 +93,13 @@ class AuroraRepository(
         val now = clock()
         val cached = cached
         if (cached != null && now.isBefore(cached.expires)) return cached.samples
-        val fresh = runCatching { fetch() }.getOrNull() ?: return cached?.samples
+        val fresh = try {
+            fetch()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return cached?.samples
+        }
         this.cached = CacheEntry(
             samples = fresh,
             expires = now.plusSeconds(3600),
@@ -98,17 +107,17 @@ class AuroraRepository(
         return fresh
     }
 
-    private suspend fun fetch(): List<KpSample> {
+    private suspend fun fetch(): List<KpSample> = withContext(Dispatchers.IO) {
         val body = service.getKpForecast()
         val root = JsonParser.parseString(body).asJsonArray
-        if (root.size() < 2) return emptyList()
+        if (root.size() < 2) return@withContext emptyList()
         // Row 0 is the header — confirm shape before trusting indices.
         val header = root[0].asJsonArray
         val timeIdx = (0 until header.size()).firstOrNull { header[it].asString == "time_tag" } ?: 0
         val kpIdx = (0 until header.size()).firstOrNull { header[it].asString == "kp" } ?: 1
         val parser = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
-        return (1 until root.size()).mapNotNull { i ->
+        (1 until root.size()).mapNotNull { i ->
             val row = root[i].asJsonArray
             val tStr = row[timeIdx].asString
             val kpStr = row[kpIdx].asString

@@ -3,11 +3,13 @@ package de.astronarren.allsky.data
 import com.jcraft.jsch.ChannelExec
 import com.jcraft.jsch.JSch
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.ByteArrayOutputStream
+import java.util.concurrent.CancellationException
 import java.util.concurrent.TimeUnit
 
 /**
@@ -67,6 +69,8 @@ class FocusController(
                 settings.host,
                 if (settings.port > 0) settings.port else 22
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             return@withContext Result(false, e.message ?: "Could not create SSH session.")
         }
@@ -85,7 +89,7 @@ class FocusController(
             channel.connect(8_000)
             val waitDeadline = System.currentTimeMillis() + 8_000
             while (!channel.isClosed && System.currentTimeMillis() < waitDeadline) {
-                Thread.sleep(50)
+                delay(50)
             }
             val exit = channel.exitStatus
             channel.disconnect()
@@ -99,6 +103,8 @@ class FocusController(
                 success = exit == 0,
                 output = if (exit == 0) identity else (stderr.toString().trim().ifBlank { "Exit $exit" })
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result(false, e.message ?: "SSH connection failed")
         } finally {
@@ -130,6 +136,8 @@ class FocusController(
                     output = "${parsed.host}:${parsed.port} • HTTP ${resp.code}"
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result(false, e.message ?: "HTTP probe failed")
         }
@@ -176,7 +184,7 @@ class FocusController(
                 // complete in well under a second per 512 steps.
                 val waitDeadline = System.currentTimeMillis() + 15_000
                 while (!channel.isClosed && System.currentTimeMillis() < waitDeadline) {
-                    Thread.sleep(50)
+                    delay(50)
                 }
                 val exit = channel.exitStatus
                 channel.disconnect()
@@ -211,6 +219,8 @@ class FocusController(
                         output = if (body.isBlank()) "HTTP ${resp.code}" else "HTTP ${resp.code} — $body"
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Result(false, e.message ?: "HTTP call failed")
             }

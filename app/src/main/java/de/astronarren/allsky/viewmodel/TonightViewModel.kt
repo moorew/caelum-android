@@ -19,6 +19,7 @@ import de.astronarren.allsky.data.astro.SatellitePass
 import de.astronarren.allsky.data.astro.SatelliteRepository
 import de.astronarren.allsky.ui.modules.ActiveShower
 import de.astronarren.allsky.ui.modules.findActiveShower
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -132,13 +133,23 @@ class TonightViewModel(
 
             // Network rows in parallel. Each lights its own row independently.
             launch {
-                val aurora = runCatching { auroraRepository.tonight(lat, lon) }.getOrNull()
+                val aurora = try {
+                    auroraRepository.tonight(lat, lon)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    null
+                }
                 _state.update { it.copy(aurora = aurora) }
             }
             launch {
-                val passes = runCatching { satelliteRepository.upcomingPasses(lat, lon) }
-                    .getOrNull()
-                    ?: emptyList()
+                val passes = try {
+                    satelliteRepository.upcomingPasses(lat, lon) ?: emptyList()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    emptyList()
+                }
                 _state.update { it.copy(satellitePasses = passes) }
             }
 

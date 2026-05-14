@@ -40,6 +40,10 @@ import de.astronarren.allsky.ui.focus.FocusScreen
 import de.astronarren.allsky.ui.layout.LayoutEditorScreen
 import de.astronarren.allsky.ui.media.MediaScreen
 import de.astronarren.allsky.ui.settings.SettingsScreen
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import okhttp3.OkHttpClient
 
 class MainActivity : ComponentActivity() {
@@ -49,6 +53,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var setupViewModel: SetupViewModel
     private lateinit var liveImageViewModel: LiveImageViewModel
     private lateinit var languageViewModel: LanguageViewModel
+    private lateinit var languageManager: LanguageManager
+    private val imagePipelineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
      * Set by notification PendingIntents (see [NotificationHelper.EXTRA_SCROLL_TO]).
@@ -62,7 +68,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         
         // Initialize LanguageManager and ViewModel
-        val languageManager = LanguageManager(this) {
+        languageManager = LanguageManager(this) {
             // Recreate activity when language changes
             recreate()
         }
@@ -92,7 +98,7 @@ class MainActivity : ComponentActivity() {
         // Coil request to the configured Allsky host is authenticated, with or
         // without `user:pass@` embedded in the URL.
         val okHttpClient = OkHttpClient.Builder()
-            .addInterceptor(AllskyAuthInterceptor(userPreferences))
+            .addInterceptor(AllskyAuthInterceptor(userPreferences, imagePipelineScope))
             .build()
 
         val imageLoader = ImageLoader.Builder(applicationContext)
@@ -242,6 +248,14 @@ class MainActivity : ComponentActivity() {
         intent.getStringExtra(NotificationHelper.EXTRA_SCROLL_TO)?.let {
             scrollTarget.value = it
         }
+    }
+
+    override fun onDestroy() {
+        if (::languageManager.isInitialized) {
+            languageManager.close()
+        }
+        imagePipelineScope.cancel()
+        super.onDestroy()
     }
 
     private fun scheduleWeatherWorker() {

@@ -6,6 +6,9 @@ import de.astronarren.allsky.data.WeatherRepository
 import de.astronarren.allsky.data.UserPreferences
 import de.astronarren.allsky.data.WeatherData
 import de.astronarren.allsky.ui.state.WeatherUiState
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,20 +23,23 @@ class WeatherViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(WeatherUiState())
     val uiState: StateFlow<WeatherUiState> = _uiState.asStateFlow()
+    private var updateJob: Job? = null
 
     init {
         viewModelScope.launch {
-            kotlinx.coroutines.flow.combine(
+            combine(
                 userPreferences.getApiKeyFlow(),
                 userPreferences.getLatitudeFlow(),
                 userPreferences.getLongitudeFlow()
             ) { apiKey, lat, lon ->
                 Triple(apiKey, lat, lon)
-            }.collect { (apiKey, lat, lon) ->
-                if (apiKey.isNotBlank() && lat.isNotBlank() && lon.isNotBlank()) {
-                    performUpdate(apiKey, lat, lon)
-                }
             }
+                .distinctUntilChanged()
+                .collect { (apiKey, lat, lon) ->
+                    if (apiKey.isNotBlank() && lat.isNotBlank() && lon.isNotBlank()) {
+                        scheduleUpdate(apiKey, lat, lon)
+                    }
+                }
         }
     }
 
@@ -42,6 +48,13 @@ class WeatherViewModel(
             val apiKey = userPreferences.getApiKey()
             val lat = userPreferences.getLatitude()
             val lon = userPreferences.getLongitude()
+            scheduleUpdate(apiKey, lat, lon)
+        }
+    }
+
+    private fun scheduleUpdate(apiKey: String, lat: String, lon: String) {
+        updateJob?.cancel()
+        updateJob = viewModelScope.launch {
             performUpdate(apiKey, lat, lon)
         }
     }

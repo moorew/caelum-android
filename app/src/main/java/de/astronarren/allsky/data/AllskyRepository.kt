@@ -6,6 +6,7 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.*
 import android.util.Base64
+import java.util.concurrent.CancellationException
 
 class AllskyRepository(
     private val userPreferences: UserPreferences
@@ -82,6 +83,8 @@ class AllskyRepository(
                     val portalDef = async {
                         try {
                             createConnection("$jsoupBaseUrl/index.php?page=$portalPage").get()
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (e: Exception) {
                             println("Debug: Portal page ($portalPage) fetch failed: ${e.message}")
                             null
@@ -90,6 +93,8 @@ class AllskyRepository(
                     val directoryDef = async {
                         try {
                             createConnection("$jsoupBaseUrl/$path").get()
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (e: Exception) {
                             println("Debug: Directory ($path) fetch failed: ${e.message}")
                             null
@@ -135,6 +140,8 @@ class AllskyRepository(
                                 FetchPair(dayDoc, null), authBaseUrl, MediaKind.IMAGE, "images"
                             )
                             if (dailyImages.isNotEmpty()) images = dailyImages
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (e: Exception) {
                             println("Debug: Nested image fetch failed: ${e.message}")
                         }
@@ -150,6 +157,8 @@ class AllskyRepository(
                 }
 
                 content
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 println("Debug: Error fetching allsky content: ${e.message}")
                 if (e is org.jsoup.HttpStatusException) {

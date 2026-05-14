@@ -1,16 +1,13 @@
 package de.astronarren.allsky.data
 
+import de.astronarren.allsky.data.network.WeatherApiProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
+import java.util.concurrent.CancellationException
 
-class UpdateRepository {
-    private val updateService = Retrofit.Builder()
-        .baseUrl("https://api.github.com/repos/acocalypso/allskyviewer-companion/")
-        .addConverterFactory(GsonConverterFactory.create())
-        .build()
-        .create(UpdateService::class.java)
+class UpdateRepository(
+    private val updateService: UpdateService = WeatherApiProvider.provideUpdateService()
+) {
 
     suspend fun checkForUpdate(currentVersion: String): UpdateInfo? {
         return withContext(Dispatchers.IO) {
@@ -29,6 +26,8 @@ class UpdateRepository {
                         )
                     } else null
                 } else null
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 println("Debug: Update check failed: ${e.message}")
                 null
@@ -37,8 +36,8 @@ class UpdateRepository {
     }
 
     private fun isNewerVersion(latest: String, current: String): Boolean {
-        val latestParts = latest.split(".").map { it.toInt() }
-        val currentParts = current.split(".").map { it.toInt() }
+        val latestParts = latest.split(".").map { it.toIntOrNull() ?: 0 }
+        val currentParts = current.split(".").map { it.toIntOrNull() ?: 0 }
         
         for (i in 0..2) {
             val latestPart = latestParts.getOrNull(i) ?: 0
@@ -56,4 +55,4 @@ data class UpdateInfo(
     val downloadUrl: String,
     val releaseNotes: String,
     val apkSize: Long
-) 
+)

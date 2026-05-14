@@ -7,10 +7,13 @@ import de.astronarren.allsky.data.GeocodingService
 import de.astronarren.allsky.data.UserPreferences
 import de.astronarren.allsky.data.network.WeatherApiProvider
 import de.astronarren.allsky.ui.state.SetupUiState
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class SetupViewModel(
     private val userPreferences: UserPreferences,
@@ -129,7 +132,11 @@ class SetupViewModel(
         searchJob = viewModelScope.launch {
             delay(350)
             _uiState.update { it.copy(locationLoading = true, locationError = null) }
-            runCatching { geocodingService.search(name = trimmed) }
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    geocodingService.search(name = trimmed)
+                }
+            }
                 .onSuccess { response ->
                     _uiState.update {
                         it.copy(
@@ -140,6 +147,7 @@ class SetupViewModel(
                     }
                 }
                 .onFailure { e ->
+                    if (e is CancellationException) throw e
                     _uiState.update {
                         it.copy(
                             locationLoading = false,

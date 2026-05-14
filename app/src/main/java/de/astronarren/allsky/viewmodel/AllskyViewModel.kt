@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import de.astronarren.allsky.data.AllskyRepository
 import de.astronarren.allsky.data.UserPreferences
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,6 +33,7 @@ class AllskyViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(AllskyUiState())
     val uiState: StateFlow<AllskyUiState> = _uiState.asStateFlow()
+    private var loadJob: Job? = null
 
     init {
         loadContent()
@@ -41,7 +44,8 @@ class AllskyViewModel(
     }
 
     private fun loadContent(date: String? = null) {
-        viewModelScope.launch {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             _uiState.update { currentState ->
                 currentState.copy(isLoading = true, error = null)
             }
@@ -65,6 +69,8 @@ class AllskyViewModel(
                         AllskyMediaUiState(it.date, it.url)
                     }
                 )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.value = AllskyUiState(
                     isLoading = false,

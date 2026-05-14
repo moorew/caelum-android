@@ -4,10 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import de.astronarren.allsky.data.UserPreferences
 import de.astronarren.allsky.ui.state.LiveImageUiState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
 class LiveImageViewModel(
@@ -24,41 +27,55 @@ class LiveImageViewModel(
 
     init {
         startImageRefresh()
-        observeUrlChanges()
     }
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private fun startImageRefresh() {
         viewModelScope.launch {
-            while (true) {
-                try {
-                    updateImage()
-                } catch (e: Exception) {
-                    _uiState.update { it.copy(error = "Network drop: ${e.message}") }
-                }
-                val currentError = _uiState.value.error
-                if (currentError != null) {
-                    delay(60_000) // 1 minute retry on error
-                } else {
-                    delay(30_000) // 30s normal refresh
-                }
+            combine(
+                userPreferences.getAllskyUrlFlow(),
+                userPreferences.getUsernameFlow(),
+                userPreferences.getPasswordFlow()
+            ) { url, username, password ->
+                LiveImageConfig(
+                    baseUrl = url.trim().trimEnd('/'),
+                    username = username,
+                    password = password,
+                )
             }
-        }
-    }
-
-    private fun observeUrlChanges() {
-        viewModelScope.launch {
-            userPreferences.getAllskyUrlFlow()
                 .distinctUntilChanged()
-                .collect { url ->
-                    // Invalidate the cached resolved path so the next refresh
-                    // re-probes the new base URL.
-                    cachedStreamKey = null
-                    cachedBase = ""
-                    if (url.isNotEmpty()) {
-                        updateImage(url)
+                .flatMapLatest { config ->
+                    flow {
+                        resetResolvedImage(config.baseUrl)
+                        while (currentCoroutineContext().isActive) {
+                            emit(config)
+                            delay(
+                                if (_uiState.value.error != null) {
+                                    ERROR_REFRESH_INTERVAL_MS
+                                } else {
+                                    NORMAL_REFRESH_INTERVAL_MS
+                                }
+                            )
+                        }
+                    }
+                }
+                .collectLatest { config ->
+                    try {
+                        updateImage(config)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        consecutiveErrors += 1
+                        _uiState.update { it.copy(error = "Network drop: ${e.message}") }
                     }
                 }
         }
+    }
+
+    private fun resetResolvedImage(baseUrl: String) {
+        cachedStreamKey = null
+        cachedBase = baseUrl
+        consecutiveErrors = 0
     }
 
     /**
@@ -78,16 +95,13 @@ class LiveImageViewModel(
         }
     }
 
-    private suspend fun updateImage(baseUrl: String? = null) {
-        val url = baseUrl ?: userPreferences.getAllskyUrl()
-        if (url.isEmpty()) {
+    private suspend fun updateImage(config: LiveImageConfig) {
+        if (config.baseUrl.isEmpty()) {
             _uiState.update { it.copy(error = "Allsky URL not configured") }
             return
         }
 
-        val username = userPreferences.getUsername()
-        val password = userPreferences.getPassword()
-        val cleanUrl = url.trimEnd('/')
+        val cleanUrl = config.baseUrl
 
         try {
             // Reuse a previously resolved stream URL while the base URL is
@@ -99,7 +113,7 @@ class LiveImageViewModel(
             val resolved: String = if (reusable) {
                 cachedStreamKey!!
             } else {
-                probeLiveImage(cleanUrl, username, password) ?: "$cleanUrl/image.jpg"
+                probeLiveImage(cleanUrl, config.username, config.password) ?: "$cleanUrl/image.jpg"
             }
 
             cachedBase = cleanUrl
@@ -114,6 +128,8 @@ class LiveImageViewModel(
                     error = null
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             consecutiveErrors += 1
             _uiState.update { it.copy(error = "Stream error: ${e.message}") }
@@ -125,9 +141,9 @@ class LiveImageViewModel(
         username: String,
         password: String
     ): String? = withContext(Dispatchers.IO) {
-        suspend fun testPath(path: String): Int = withContext(Dispatchers.IO) {
+        fun testPath(path: String): Int {
             var conn: java.net.HttpURLConnection? = null
-            try {
+            return try {
                 val testUrl = java.net.URL(path)
                 conn = (testUrl.openConnection() as java.net.HttpURLConnection).apply {
                     requestMethod = "HEAD"
@@ -142,6 +158,8 @@ class LiveImageViewModel(
                     readTimeout = 5000
                 }
                 conn.responseCode
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 -1
             } finally {
@@ -168,5 +186,16 @@ class LiveImageViewModel(
         }
 
         null
+    }
+
+    private data class LiveImageConfig(
+        val baseUrl: String,
+        val username: String,
+        val password: String,
+    )
+
+    private companion object {
+        const val NORMAL_REFRESH_INTERVAL_MS = 30_000L
+        const val ERROR_REFRESH_INTERVAL_MS = 60_000L
     }
 }

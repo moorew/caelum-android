@@ -5,6 +5,33 @@ documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.6.1] - 2026-05-14
+### Changed
+- **Coroutine and worker cleanup.** Network-heavy repository calls, weather
+  workers, Allsky media refreshes, focus-motor calls, geocoding, aurora
+  fetches, and satellite TLE work now run on explicit IO or Default
+  dispatchers as appropriate. Cancellation is preserved instead of being
+  converted into stale UI errors or WorkManager retries.
+- **Shared network services.** Weather, geocoding, and update checks now reuse
+  singleton Retrofit services backed by one configured OkHttp client instead
+  of rebuilding clients on demand.
+- **Non-blocking media authentication.** Coil and ExoPlayer auth no longer use
+  `runBlocking` on request or composition paths. Allsky credentials are
+  resolved asynchronously, scoped to the configured Allsky host, and promoted
+  to explicit `Authorization` headers for images, videos, and downloads.
+- **Lower image memory pressure.** Live-image palette extraction now samples a
+  downscaled software bitmap at most every five minutes while ordinary live
+  refreshes can use hardware bitmaps. Widget image loads reuse Coil's global
+  loader and request smaller RemoteViews-safe bitmaps.
+
+### Fixed
+- Removed the system-only `BIND_APPWIDGET` permission declaration that normal
+  apps cannot hold.
+- Stopped overlapping weather/live/media refresh jobs from racing stale state
+  into the UI.
+- Closed Activity-owned language and image-auth coroutine scopes during
+  teardown.
+
 ## [3.6.0] - 2026-05-12
 ### Added
 - **3-tap precise calibration.** The calibration screen now has a

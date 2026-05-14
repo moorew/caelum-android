@@ -82,8 +82,9 @@ fun LayoutEditorScreen(
     // FOCUS entry stays in `onList` (the editor doesn't strip it) — it just
     // won't render anything on the home screen. That's the cheap fix; a
     // future polish could auto-prune on save.
-    val focusEnabled by produceState(initialValue = false, userPreferences) {
-        userPreferences.getFocusSettingsFlow().collect { value = it.enabled }
+    var focusEnabled by remember { mutableStateOf(false) }
+    LaunchedEffect(userPreferences) {
+        userPreferences.getFocusSettingsFlow().collect { focusEnabled = it.enabled }
     }
 
     var onList by remember { mutableStateOf<List<String>>(emptyList()) }

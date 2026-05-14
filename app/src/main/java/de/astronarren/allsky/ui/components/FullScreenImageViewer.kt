@@ -30,9 +30,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import de.astronarren.allsky.network.AllskyAuth
 import de.astronarren.allsky.utils.DownloadHelper
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Possible states for the small status pill shown at the top centre. The viewer
@@ -46,6 +49,11 @@ private enum class ViewerStatus(val label: String, val icon: ImageVector, val ti
     SAVED("SAVED TO GALLERY", Icons.Default.Check, Color(0xFFB9F6CA)),
     ERROR("LOAD FAILED", Icons.Default.ErrorOutline, Color(0xFFFFAB91)),
 }
+
+private data class ImageAuthState(
+    val isLoaded: Boolean,
+    val header: String?,
+)
 
 @Composable
 fun FullScreenImageViewer(
@@ -84,6 +92,21 @@ fun FullScreenImageViewer(
         }
     }
 
+    val (cleanImageUrl, urlAuth) = remember(imageUrl) { AllskyAuth.extractAuth(imageUrl) }
+    var authState by remember(cleanImageUrl, urlAuth, userPreferences) {
+        mutableStateOf(ImageAuthState(isLoaded = urlAuth != null, header = urlAuth))
+    }
+    LaunchedEffect(cleanImageUrl, urlAuth, userPreferences) {
+        authState = if (urlAuth != null) {
+            ImageAuthState(isLoaded = true, header = urlAuth)
+        } else {
+            val header = withContext(Dispatchers.IO) {
+                AllskyAuth.storedAuthHeaderForUrl(cleanImageUrl, userPreferences)
+            }
+            ImageAuthState(isLoaded = true, header = header)
+        }
+    }
+
     BackHandler(enabled = true) { onDismiss() }
 
     Box(
@@ -97,54 +120,69 @@ fun FullScreenImageViewer(
                   already hidden by MainScreen, but defence in depth) can't be
                   hit through the viewer. */ }
     ) {
-        AsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(imageUrl)
-                .listener(
-                    onStart = { loadStatus = ViewerStatus.LOADING },
-                    onSuccess = { _, _ -> loadStatus = ViewerStatus.READY },
-                    onError = { _, _ -> loadStatus = ViewerStatus.ERROR }
-                )
-                .build(),
-            contentDescription = "Full screen image",
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer(
-                    scaleX = scale,
-                    scaleY = scale,
-                    translationX = offsetX,
-                    translationY = offsetY
-                )
-                .pointerInput(Unit) {
-                    detectTransformGestures { _, pan, zoom, _ ->
-                        scale = (scale * zoom).coerceIn(1f, 5f)
-                        if (scale > 1f) {
-                            val maxX = size.width * (scale - 1) / 2
-                            val maxY = size.height * (scale - 1) / 2
-                            offsetX = (offsetX + pan.x).coerceIn(-maxX, maxX)
-                            offsetY = (offsetY + pan.y).coerceIn(-maxY, maxY)
-                        } else {
-                            offsetX = 0f
-                            offsetY = 0f
+        if (!authState.isLoaded) {
+            CircularProgressIndicator(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(48.dp),
+                color = Color.White.copy(alpha = 0.6f),
+                strokeWidth = 3.dp
+            )
+        } else {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(cleanImageUrl)
+                    .apply {
+                        authState.header?.let {
+                            setHeader("Authorization", it)
                         }
                     }
-                }
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onDoubleTap = {
-                            scale = if (scale > 1f) 1f else 3f
-                            offsetX = 0f
-                            offsetY = 0f
-                        },
-                        onTap = {
-                            if (scale <= 1.1f) onDismiss()
-                        }
+                    .listener(
+                        onStart = { loadStatus = ViewerStatus.LOADING },
+                        onSuccess = { _, _ -> loadStatus = ViewerStatus.READY },
+                        onError = { _, _ -> loadStatus = ViewerStatus.ERROR }
                     )
-                },
-            contentScale = ContentScale.Fit
-        )
+                    .build(),
+                contentDescription = "Full screen image",
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer(
+                        scaleX = scale,
+                        scaleY = scale,
+                        translationX = offsetX,
+                        translationY = offsetY
+                    )
+                    .pointerInput(Unit) {
+                        detectTransformGestures { _, pan, zoom, _ ->
+                            scale = (scale * zoom).coerceIn(1f, 5f)
+                            if (scale > 1f) {
+                                val maxX = size.width * (scale - 1) / 2
+                                val maxY = size.height * (scale - 1) / 2
+                                offsetX = (offsetX + pan.x).coerceIn(-maxX, maxX)
+                                offsetY = (offsetY + pan.y).coerceIn(-maxY, maxY)
+                            } else {
+                                offsetX = 0f
+                                offsetY = 0f
+                            }
+                        }
+                    }
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onDoubleTap = {
+                                scale = if (scale > 1f) 1f else 3f
+                                offsetX = 0f
+                                offsetY = 0f
+                            },
+                            onTap = {
+                                if (scale <= 1.1f) onDismiss()
+                            }
+                        )
+                    },
+                contentScale = ContentScale.Fit
+            )
+        }
 
-        if (loadStatus == ViewerStatus.LOADING) {
+        if (authState.isLoaded && loadStatus == ViewerStatus.LOADING) {
             CircularProgressIndicator(
                 modifier = Modifier
                     .align(Alignment.Center)

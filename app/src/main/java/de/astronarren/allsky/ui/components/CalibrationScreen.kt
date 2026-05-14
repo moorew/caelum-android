@@ -36,6 +36,7 @@ import de.astronarren.allsky.data.astro.HorizontalCoords
 import de.astronarren.allsky.data.astro.MoonAlmanac
 import de.astronarren.allsky.data.astro.Planet
 import de.astronarren.allsky.data.astro.PlanetAlmanac
+import de.astronarren.allsky.network.AllskyAuth
 import kotlinx.coroutines.launch
 import java.time.Instant
 
@@ -70,6 +71,11 @@ fun CalibrationScreen(
 
     val latStr by userPreferences.getLatitudeFlow().collectAsStateWithLifecycle(initialValue = "")
     val lonStr by userPreferences.getLongitudeFlow().collectAsStateWithLifecycle(initialValue = "")
+    val allskyUsername by userPreferences.getUsernameFlow().collectAsStateWithLifecycle(initialValue = "")
+    val allskyPassword by userPreferences.getPasswordFlow().collectAsStateWithLifecycle(initialValue = "")
+    val allskyAuthHeader = remember(allskyUsername, allskyPassword) {
+        AllskyAuth.basicAuthHeader(allskyUsername, allskyPassword)
+    }
     val currentCalibration by userPreferences.getFisheyeCalibrationFlow()
         .collectAsStateWithLifecycle(initialValue = FisheyeCalibration.DEFAULT_INSCRIBED)
 
@@ -220,16 +226,22 @@ fun CalibrationScreen(
                         AsyncImage(
                             model = ImageRequest.Builder(context)
                                 .data(liveImageUrl)
-                                .allowHardware(false)
                                 .listener(
                                     onSuccess = { _, result ->
-                                        val bmp = (result.drawable as? android.graphics.drawable.BitmapDrawable)
-                                            ?.bitmap
-                                        if (bmp != null) {
-                                            imageSize = IntSize(bmp.width, bmp.height)
+                                        val drawable = result.drawable
+                                        if (drawable.intrinsicWidth > 0 && drawable.intrinsicHeight > 0) {
+                                            imageSize = IntSize(
+                                                drawable.intrinsicWidth,
+                                                drawable.intrinsicHeight
+                                            )
                                         }
                                     },
                                 )
+                                .apply {
+                                    allskyAuthHeader?.let {
+                                        setHeader("Authorization", it)
+                                    }
+                                }
                                 .build(),
                             contentDescription = "Live frame to calibrate",
                             contentScale = ContentScale.Fit,

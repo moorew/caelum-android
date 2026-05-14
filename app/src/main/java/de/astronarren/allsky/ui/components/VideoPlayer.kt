@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Downloading
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -33,11 +34,14 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import de.astronarren.allsky.utils.DownloadHelper
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.hls.HlsMediaSource
@@ -53,7 +57,13 @@ private enum class VideoStatus(val label: String, val icon: ImageVector, val tin
     ERROR("PLAYBACK ERROR", Icons.Default.ErrorOutline, Color(0xFFFFAB91)),
 }
 
+private data class VideoAuthState(
+    val isLoaded: Boolean,
+    val header: String?,
+)
+
 @Composable
+@androidx.annotation.OptIn(UnstableApi::class)
 fun VideoPlayer(
     videoUrl: String,
     userPreferences: de.astronarren.allsky.data.UserPreferences,
@@ -74,7 +84,45 @@ fun VideoPlayer(
         }
     }
 
-    val exoPlayer = remember(videoUrl) {
+    val (cleanUrl, urlAuth) = remember(videoUrl) { AllskyAuth.extractAuth(videoUrl) }
+    var authState by remember(cleanUrl, urlAuth, userPreferences) {
+        mutableStateOf(VideoAuthState(isLoaded = urlAuth != null, header = urlAuth))
+    }
+    LaunchedEffect(cleanUrl, urlAuth, userPreferences) {
+        authState = if (urlAuth != null) {
+            VideoAuthState(isLoaded = true, header = urlAuth)
+        } else {
+            val header = withContext(Dispatchers.IO) {
+                AllskyAuth.storedAuthHeaderForUrl(cleanUrl, userPreferences)
+            }
+            VideoAuthState(isLoaded = true, header = header)
+        }
+    }
+
+    val fileName = remember(videoUrl) {
+        val lastPathSegment = videoUrl.substringAfterLast("/").substringBefore("?")
+        if (lastPathSegment.endsWith(".mp4") || lastPathSegment.endsWith(".webm") ||
+            lastPathSegment.endsWith(".mov") || lastPathSegment.endsWith(".mkv")) {
+            lastPathSegment
+        } else {
+            "allsky_video_${System.currentTimeMillis()}.mp4"
+        }
+    }
+
+    if (!authState.isLoaded) {
+        BackHandler(enabled = true) { onDismiss() }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator(color = Color.White.copy(alpha = 0.6f))
+        }
+        return
+    }
+
+    val exoPlayer = remember(videoUrl, cleanUrl, authState.header) {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 32000, // min buffer
@@ -87,12 +135,7 @@ fun VideoPlayer(
         // promote it to a request header. Falls back to stored credentials if
         // the URL was clean — most Allsky installs sit behind Basic Auth and
         // ExoPlayer otherwise drops userinfo silently, returning HTTP 401.
-        val (cleanUrl, urlAuth) = AllskyAuth.extractAuth(videoUrl)
-        val auth = urlAuth ?: run {
-            val storedUser = kotlinx.coroutines.runBlocking { userPreferences.getUsername() }
-            val storedPass = kotlinx.coroutines.runBlocking { userPreferences.getPassword() }
-            AllskyAuth.basicAuthHeader(storedUser, storedPass)
-        }
+        val auth = authState.header
 
         val httpFactory = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
@@ -144,16 +187,6 @@ fun VideoPlayer(
         onDispose {
             exoPlayer.removeListener(listener)
             exoPlayer.release()
-        }
-    }
-
-    val fileName = remember(videoUrl) {
-        val lastPathSegment = videoUrl.substringAfterLast("/").substringBefore("?")
-        if (lastPathSegment.endsWith(".mp4") || lastPathSegment.endsWith(".webm") ||
-            lastPathSegment.endsWith(".mov") || lastPathSegment.endsWith(".mkv")) {
-            lastPathSegment
-        } else {
-            "allsky_video_${System.currentTimeMillis()}.mp4"
         }
     }
 

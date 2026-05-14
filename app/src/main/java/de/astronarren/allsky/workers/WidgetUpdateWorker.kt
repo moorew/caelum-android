@@ -9,12 +9,13 @@ import android.view.View
 import android.widget.RemoteViews
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import coil.ImageLoader
+import coil.Coil
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import de.astronarren.allsky.R
 import de.astronarren.allsky.data.UserPreferences
 import de.astronarren.allsky.data.network.WeatherApiProvider
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
@@ -58,6 +59,8 @@ class WidgetUpdateWorker(
             }
             appWidgetManager.updateAppWidget(appWidgetId, views)
             Result.success()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             views.setTextViewText(R.id.widget_last_update, context.getString(R.string.widget_error))
             appWidgetManager.updateAppWidget(appWidgetId, views)
@@ -93,6 +96,8 @@ class WidgetUpdateWorker(
                     views.setTextViewText(R.id.widget_weather_day3_desc, "${Math.round(dailyForecasts[2].main.temp)}°C | ${dailyForecasts[2].clouds.all}%")
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             // Weather is optional
         }
@@ -128,11 +133,11 @@ class WidgetUpdateWorker(
         // Add timestamp to prevent caching old image
         val requestUrl = "$finalUrl?t=${System.currentTimeMillis()}"
 
-        val imageLoader = ImageLoader(context)
+        val imageLoader = Coil.imageLoader(context)
         val requestBuilder = ImageRequest.Builder(context)
             .data(requestUrl)
             .allowHardware(false) // CRITICAL for RemoteViews bitmaps
-            .size(1024, 768) // Downsample to avoid TransactionTooLargeException (1MB limit)
+            .size(512, 384) // Keep binder payload below RemoteViews transaction limits.
             
         if (username.isNotEmpty() && password.isNotEmpty()) {
             val authHeader = "Basic " + Base64.encodeToString("$username:$password".toByteArray(), Base64.NO_WRAP)
@@ -142,17 +147,17 @@ class WidgetUpdateWorker(
         val request = requestBuilder.build()
         val result = imageLoader.execute(request)
         
-        return if (result is SuccessResult) {
-            (result.drawable as? BitmapDrawable)?.bitmap
-        } else {
-            null
-        }
+        return (result as? SuccessResult)
+            ?.drawable
+            ?.let { it as? BitmapDrawable }
+            ?.bitmap
     }
 
     private fun testPath(path: String, user: String, pass: String): Boolean {
+        var conn: HttpURLConnection? = null
         return try {
             val url = URL(path)
-            val conn = url.openConnection() as HttpURLConnection
+            conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "HEAD"
             if (user.isNotEmpty() && pass.isNotEmpty()) {
                 val basicAuth = "Basic " + Base64.encodeToString("$user:$pass".toByteArray(), Base64.NO_WRAP)
@@ -161,10 +166,13 @@ class WidgetUpdateWorker(
             conn.connectTimeout = 3000
             conn.readTimeout = 3000
             val code = conn.responseCode
-            conn.disconnect()
             code == 200
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
+        } finally {
+            conn?.disconnect()
         }
     }
 }

@@ -81,6 +81,7 @@ import de.astronarren.allsky.ui.modules.FocusModule
 import de.astronarren.allsky.ui.modules.TonightModule
 import de.astronarren.allsky.viewmodel.FocusViewModel
 import de.astronarren.allsky.viewmodel.FocusViewModelFactory
+import de.astronarren.allsky.network.AllskyAuth
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -167,6 +168,11 @@ fun MainScreen(
     val allskyUrl by userPreferences.getAllskyUrlFlow().collectAsStateWithLifecycle(initialValue = "")
     val stationName by userPreferences.getStationNameFlow().collectAsStateWithLifecycle(initialValue = "")
     val apiKey by userPreferences.getApiKeyFlow().collectAsStateWithLifecycle(initialValue = "")
+    val allskyUsername by userPreferences.getUsernameFlow().collectAsStateWithLifecycle(initialValue = "")
+    val allskyPassword by userPreferences.getPasswordFlow().collectAsStateWithLifecycle(initialValue = "")
+    val allskyAuthHeader = remember(allskyUsername, allskyPassword) {
+        AllskyAuth.basicAuthHeader(allskyUsername, allskyPassword)
+    }
     val skyAlertsEnabled by userPreferences.getSkyAlertsEnabledFlow().collectAsStateWithLifecycle(initialValue = false)
 
     // Sky-overlay state. Both flows always emit (the calibration flow falls
@@ -192,6 +198,7 @@ fun MainScreen(
 
     var currentVideo by remember { mutableStateOf<String?>(null) }
     var paletteColors by remember { mutableStateOf<List<Color>?>(null) }
+    var lastPaletteSampleAt by remember { mutableLongStateOf(0L) }
 
     // When a viewer (image or video) is open we hide the entire app chrome so
     // the user only sees the media + viewer-owned controls. Previously the
@@ -402,29 +409,50 @@ fun MainScreen(
                                                     ) { targetKey ->
                                                         val targetUrl = if (targetKey != null) liveImageState.imageUrl else null
                                                         if (targetUrl != null) {
+                                                            val samplePaletteOnThisLoad =
+                                                                System.currentTimeMillis() - lastPaletteSampleAt >= 5 * 60_000L
                                                             AsyncImage(
                                                                 model = coil.request.ImageRequest.Builder(LocalContext.current)
                                                                     .data(targetUrl)
-                                                                    .allowHardware(false)
+                                                                    .allowHardware(!samplePaletteOnThisLoad)
                                                                     .listener(
                                                                         onSuccess = { _, result ->
-                                                                            val bmp = (result.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
-                                                                            if (bmp != null) {
+                                                                            val drawable = result.drawable
+                                                                            if (drawable.intrinsicWidth > 0 && drawable.intrinsicHeight > 0) {
                                                                                 // Push intrinsic image size into the VM so the
                                                                                 // SkyOverlay can apply the ContentScale.Crop
                                                                                 // transform to fractional fisheye coords.
-                                                                                liveImageViewModel.setImageSize(bmp.width, bmp.height)
-                                                                                androidx.palette.graphics.Palette.from(bmp).generate { p ->
-                                                                                    val dom = p?.dominantSwatch?.rgb
-                                                                                    val darkMuted = p?.darkMutedSwatch?.rgb
-                                                                                    val darkVibrant = p?.darkVibrantSwatch?.rgb
-                                                                                    if (dom != null) {
-                                                                                        paletteColors = listOf(Color(dom), Color(darkVibrant ?: darkMuted ?: dom).copy(alpha = 0.8f), Color(darkMuted ?: dom).copy(alpha = 0.6f))
+                                                                                liveImageViewModel.setImageSize(
+                                                                                    drawable.intrinsicWidth,
+                                                                                    drawable.intrinsicHeight
+                                                                                )
+                                                                            }
+                                                                            val bmp = (drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
+                                                                            if (samplePaletteOnThisLoad && bmp != null) {
+                                                                                lastPaletteSampleAt = System.currentTimeMillis()
+                                                                                androidx.palette.graphics.Palette.from(bmp)
+                                                                                    .resizeBitmapArea(64 * 64)
+                                                                                    .maximumColorCount(8)
+                                                                                    .generate { p ->
+                                                                                        val dom = p?.dominantSwatch?.rgb
+                                                                                        val darkMuted = p?.darkMutedSwatch?.rgb
+                                                                                        val darkVibrant = p?.darkVibrantSwatch?.rgb
+                                                                                        if (dom != null) {
+                                                                                            paletteColors = listOf(
+                                                                                                Color(dom),
+                                                                                                Color(darkVibrant ?: darkMuted ?: dom).copy(alpha = 0.8f),
+                                                                                                Color(darkMuted ?: dom).copy(alpha = 0.6f)
+                                                                                            )
+                                                                                        }
                                                                                     }
-                                                                                }
                                                                             }
                                                                         }
                                                                     )
+                                                                    .apply {
+                                                                        allskyAuthHeader?.let {
+                                                                            setHeader("Authorization", it)
+                                                                        }
+                                                                    }
                                                                     .build(),
                                                                 contentDescription = stringResource(R.string.live_allsky_image),
                                                                 modifier = Modifier.fillMaxSize(),

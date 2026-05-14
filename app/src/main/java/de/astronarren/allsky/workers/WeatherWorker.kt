@@ -8,6 +8,9 @@ import de.astronarren.allsky.data.SkyRating
 import de.astronarren.allsky.data.UserPreferences
 import de.astronarren.allsky.data.network.WeatherApiProvider
 import de.astronarren.allsky.utils.NotificationHelper
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -30,26 +33,28 @@ class WeatherWorker(
     params: WorkerParameters
 ) : CoroutineWorker(context, params) {
 
-    override suspend fun doWork(): Result {
+    override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val prefs = UserPreferences(applicationContext)
         val apiKey = prefs.getApiKey()
-        if (apiKey.isBlank()) return Result.failure()
+        if (apiKey.isBlank()) return@withContext Result.failure()
 
         val lat = prefs.getLatitude().toDoubleOrNull()
         val lon = prefs.getLongitude().toDoubleOrNull()
-        if (lat == null || lon == null) return Result.failure()
+        if (lat == null || lon == null) return@withContext Result.failure()
 
         val response = try {
             WeatherApiProvider.provideWeatherService()
                 .getForecast(lat = lat, lon = lon, apiKey = apiKey)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            return Result.retry()
+            return@withContext Result.retry()
         }
 
         // Done with the network — everything below is local logic. We always
         // succeed from here so a refresh that produced data isn't retried
         // even if the user has alerts off.
-        if (!prefs.isSkyAlertsEnabled()) return Result.success()
+        if (!prefs.isSkyAlertsEnabled()) return@withContext Result.success()
 
         // The "night key" is today's date in the device timezone. We only
         // use this to suppress duplicates — the actual rating window is
@@ -61,7 +66,7 @@ class WeatherWorker(
         val newRating = SkyRater.rateNight(
             forecasts = response.list,
             sunsetEpochSec = response.city.sunset,
-        ) ?: return Result.success() // not enough night-window points yet
+        ) ?: return@withContext Result.success() // not enough night-window points yet
 
         val previous = prefs.getLastNightRating()
         val prevRatingForToday: SkyRating? = previous
@@ -97,6 +102,6 @@ class WeatherWorker(
             )
         }
 
-        return Result.success()
+        Result.success()
     }
 }

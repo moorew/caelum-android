@@ -2,7 +2,10 @@ package de.astronarren.allsky.network
 
 import android.util.Base64
 import de.astronarren.allsky.data.UserPreferences
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
 import okhttp3.Interceptor
 import okhttp3.Response
 
@@ -48,6 +51,25 @@ object AllskyAuth {
             url to null
         }
     }
+
+    suspend fun storedAuthHeaderForUrl(url: String, userPreferences: UserPreferences): String? {
+        val targetHost = hostOf(extractAuth(url).first) ?: return null
+        val savedBase = userPreferences.getAllskyUrl()
+        val (cleanBase, urlAuth) = extractAuth(savedBase)
+        val savedHost = hostOf(cleanBase) ?: return null
+        if (!targetHost.equals(savedHost, ignoreCase = true)) return null
+        return urlAuth ?: basicAuthHeader(
+            userPreferences.getUsername(),
+            userPreferences.getPassword()
+        )
+    }
+
+    internal fun hostOf(url: String): String? =
+        try {
+            android.net.Uri.parse(url).host
+        } catch (_: Exception) {
+            null
+        }
 }
 
 /**
@@ -59,16 +81,38 @@ object AllskyAuth {
  *     uses stored credentials from DataStore
  *  3. everything else — passes through unmodified
  *
- * Stored credentials are read once via `runBlocking` on the OkHttp dispatcher
- * thread; DataStore reads are fast (cached after first hit) so this avoids
- * making the entire image pipeline suspend-aware.
+ * Stored credentials are kept in an in-memory snapshot by collecting
+ * DataStore flows on a background scope. Interception stays synchronous, but
+ * individual image requests no longer block an OkHttp dispatcher thread while
+ * reading preferences.
  */
 class AllskyAuthInterceptor(
-    private val userPreferences: UserPreferences
+    userPreferences: UserPreferences,
+    scope: CoroutineScope,
 ) : Interceptor {
 
-    @Volatile private var cachedHost: String = ""
-    @Volatile private var cachedHeader: String? = null
+    private data class StoredAuth(
+        val host: String = "",
+        val header: String? = null,
+    )
+
+    @Volatile private var storedAuth = StoredAuth()
+
+    init {
+        scope.launch {
+            combine(
+                userPreferences.getAllskyUrlFlow(),
+                userPreferences.getUsernameFlow(),
+                userPreferences.getPasswordFlow()
+            ) { base, user, pass ->
+                val (cleanBase, urlAuth) = AllskyAuth.extractAuth(base)
+                StoredAuth(
+                    host = AllskyAuth.hostOf(cleanBase).orEmpty(),
+                    header = urlAuth ?: AllskyAuth.basicAuthHeader(user, pass)
+                )
+            }.collect { storedAuth = it }
+        }
+    }
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
@@ -89,30 +133,12 @@ class AllskyAuthInterceptor(
 
         // Case 2: host matches saved Allsky host
         if (original.header("Authorization") == null) {
-            val (host, header) = resolveStoredAuth()
+            val (host, header) = storedAuth
             if (header != null && host.isNotEmpty() && url.host.equals(host, ignoreCase = true)) {
                 return chain.proceed(original.newBuilder().header("Authorization", header).build())
             }
         }
 
         return chain.proceed(original)
-    }
-
-    private fun resolveStoredAuth(): Pair<String, String?> {
-        // Refresh on each call to pick up credential changes in Settings;
-        // runBlocking is acceptable because DataStore reads are non-blocking
-        // after the initial load and OkHttp dispatches us off the main thread.
-        val saved = runBlocking {
-            val base = userPreferences.getAllskyUrl()
-            val u = userPreferences.getUsername()
-            val p = userPreferences.getPassword()
-            Triple(base, u, p)
-        }
-        val (base, user, pass) = saved
-        val host = try { android.net.Uri.parse(base).host ?: "" } catch (e: Exception) { "" }
-        val header = AllskyAuth.basicAuthHeader(user, pass)
-        cachedHost = host
-        cachedHeader = header
-        return host to header
     }
 }
