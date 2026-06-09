@@ -66,13 +66,15 @@ jobs:
           ls -l .ci_keystore/release.jks
           echo "KEYSTORE_FILE=$(pwd)/.ci_keystore/release.jks" >> $GITHUB_ENV
 
-      - name: Build Release AAB (signed by Gradle)
+      # Build both artifacts: the AAB for Play Store submission and a signed
+      # universal APK for direct sideloading / in-place updates.
+      - name: Build Release AAB + APK (signed by Gradle)
         env:
           KEYSTORE_FILE: ${{ env.KEYSTORE_FILE }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew bundleRelease --no-daemon --stacktrace
+        run: ./gradlew bundleRelease assembleRelease --no-daemon --stacktrace
 
       - name: Locate signed AAB
         id: locate_aab
@@ -83,6 +85,21 @@ jobs:
           mv "$AAB" "$NEW_NAME"
           echo "RELEASE_AAB=$NEW_NAME" >> $GITHUB_ENV
 
+      - name: Locate signed APK
+        id: locate_apk
+        run: |
+          # Prefer the signed APK; never ship the *-unsigned.apk fallback.
+          APK=$(ls app/build/outputs/apk/release/*.apk | grep -v -- '-unsigned' | head -1)
+          if [ -z "$APK" ]; then
+            echo "::error::No signed release APK found in app/build/outputs/apk/release/." >&2
+            ls -l app/build/outputs/apk/release/ || true
+            exit 1
+          fi
+          echo "Found: $APK"
+          NEW_NAME="caelum-${{ steps.get_version.outputs.version }}.apk"
+          mv "$APK" "$NEW_NAME"
+          echo "RELEASE_APK=$NEW_NAME" >> $GITHUB_ENV
+
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v2
@@ -92,6 +109,8 @@ jobs:
           name: Release ${{ steps.get_version.outputs.version }}
           tag_name: v${{ steps.get_version.outputs.version }}
           body: ${{ steps.changelog.outputs.changelog }}
-          files: ${{ env.RELEASE_AAB }}
+          files: |
+            ${{ env.RELEASE_AAB }}
+            ${{ env.RELEASE_APK }}
           draft: false
           prerelease: ${{ inputs.prerelease }}
