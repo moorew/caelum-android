@@ -246,6 +246,7 @@ fun CalibrationScreen(
                             contentDescription = "Live frame to calibrate",
                             contentScale = ContentScale.Fit,
                             modifier = Modifier.fillMaxSize(),
+                            colorFilter = de.astronarren.allsky.ui.theme.caelumImageColorFilter(),
                         )
                     } else {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

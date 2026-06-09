@@ -135,7 +135,14 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge()
         setContent {
-            AllskyTheme {
+            val redLight by userPreferences.getRedLightModeFlow()
+                .collectAsStateWithLifecycle(initialValue = false)
+            val themeMode = if (redLight) {
+                de.astronarren.allsky.ui.theme.CaelumThemeMode.RedLight
+            } else {
+                de.astronarren.allsky.ui.theme.CaelumThemeMode.DeepObservatory
+            }
+            AllskyTheme(mode = themeMode) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background

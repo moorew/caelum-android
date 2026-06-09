@@ -178,7 +178,8 @@ fun FullScreenImageViewer(
                             }
                         )
                     },
-                contentScale = ContentScale.Fit
+                contentScale = ContentScale.Fit,
+                colorFilter = de.astronarren.allsky.ui.theme.caelumImageColorFilter()
             )
         }
 

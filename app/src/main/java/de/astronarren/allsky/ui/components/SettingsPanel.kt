@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storm
 import androidx.compose.material.icons.filled.CenterFocusStrong
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material3.*
@@ -30,9 +31,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import de.astronarren.allsky.ui.theme.DeepNavy
-import de.astronarren.allsky.ui.theme.NightPurple
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsPanel(
@@ -47,8 +45,13 @@ fun SettingsPanel(
     // users can validate the deep-link + highlight without waiting for the
     // weather to actually change.
     onSkyAlertsTestFire: () -> Unit = {},
+    // Red-Light night-vision mode — re-themes the whole app and tints imagery.
+    redLightEnabled: Boolean = false,
+    onRedLightToggle: (Boolean) -> Unit = {},
 ) {
     if (!isOpen) return
+
+    val c = de.astronarren.allsky.ui.theme.LocalCaelum.current
 
     ModalDrawerSheet(
         modifier = Modifier
@@ -63,7 +66,7 @@ fun SettingsPanel(
                 .fillMaxSize()
                 .background(
                     brush = Brush.verticalGradient(
-                        colors = listOf(DeepNavy, NightPurple)
+                        colors = listOf(c.field, c.field2)
                     )
                 )
                 .verticalScroll(rememberScrollState())
@@ -124,6 +127,19 @@ fun SettingsPanel(
                     checked = skyAlertsEnabled,
                     onToggle = onSkyAlertsToggle,
                     onLongPress = onSkyAlertsTestFire,
+                )
+            }
+
+            Section("Display") {
+                ToggleItem(
+                    title = "Red-Light mode",
+                    subtitle = if (redLightEnabled)
+                        "On — night-vision palette; imagery tinted red to preserve dark adaptation."
+                    else
+                        "Off — Deep Observatory palette.",
+                    icon = Icons.Default.DarkMode,
+                    checked = redLightEnabled,
+                    onToggle = onRedLightToggle,
                 )
             }
 

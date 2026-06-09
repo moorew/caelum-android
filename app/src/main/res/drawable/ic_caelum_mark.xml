@@ -1,0 +1,18 @@
+<!--
+  Caelum mark — the aperture-C: an all-sky lens ring that opens into a "C",
+  with a gold focus star at centre. Tint the strokes at runtime (ink / gold)
+  where the mark appears in-UI so it re-themes in Red-Light.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp" android:height="48dp"
+    android:viewportWidth="100" android:viewportHeight="100">
+  <!-- faint dome ring -->
+  <path android:strokeColor="#E8ECF4" android:strokeAlpha="0.15" android:strokeWidth="1.5"
+        android:pathData="M50,5 a45,45 0 1,0 0.01,0" />
+  <!-- bold C aperture (open to the right) -->
+  <path android:strokeColor="#E8ECF4" android:strokeWidth="8.5" android:strokeLineCap="round"
+        android:pathData="M76.05,28.14 A34,34 0 1 0 76.05,71.86" />
+  <!-- gold focus star -->
+  <path android:fillColor="#E9C46A"
+        android:pathData="M50,35 C51.7,46 54,48.3 65,50 C54,51.7 51.7,54 50,65 C48.3,54 46,51.7 35,50 C46,48.3 48.3,46 50,35 Z" />
+</vector>

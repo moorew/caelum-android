@@ -63,6 +63,11 @@ class UserPreferences(private val context: Context) {
         private val SKY_ALERTS_ENABLED = booleanPreferencesKey("sky_alerts_enabled")
         private val LAST_NIGHT_RATING = stringPreferencesKey("last_night_rating")
 
+        // ----- Red-Light night-vision mode (off by default) -----
+        // When on, the whole app re-themes to the monochrome deep-red palette
+        // and live/media imagery is tinted red to preserve dark adaptation.
+        private val RED_LIGHT_MODE = booleanPreferencesKey("red_light_mode")
+
         // v2 (2.2.0): moves MOON to the bottom — feedback was that the big moon
         // disc was crowding out weather and Best Viewing Night, which are the
         // modules most users glance at first. Bump this whenever the canonical
@@ -220,6 +225,16 @@ class UserPreferences(private val context: Context) {
 
     suspend fun setSkyAlertsEnabled(enabled: Boolean) {
         context.dataStore.edit { p -> p[SKY_ALERTS_ENABLED] = enabled }
+    }
+
+    // -------------------- Red-Light night-vision mode --------------------
+
+    fun getRedLightModeFlow(): Flow<Boolean> {
+        return context.dataStore.data.map { it[RED_LIGHT_MODE] ?: false }
+    }
+
+    suspend fun setRedLightMode(enabled: Boolean) {
+        context.dataStore.edit { p -> p[RED_LIGHT_MODE] = enabled }
     }
 
     /** Returns Pair(date, ratingName) or null if nothing recorded yet. */

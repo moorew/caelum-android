@@ -2,126 +2,115 @@ package de.astronarren.allsky.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import de.astronarren.allsky.R
 
-/**
- * Typography tuned for a dark, glanceable astrophotography UI.
- *
- *  - Display / headline weights are Black to read at distance through faint
- *    backdrops (the live image bleeds into the surrounding chrome).
- *  - Body weights stay Medium for legibility on translucent surfaces.
- *  - Letter spacing is dialled in per role rather than overridden inline.
- */
-val Typography = Typography(
+/* ============================================================================
+ * Caelum type ramp — Space Grotesk (headers/body) + Space Mono (instrument
+ * readouts: timestamps, magnitudes, alt/az, temps, file sizes — tabular).
+ * Space Grotesk ships as a single variable font; we pin the weight axis per
+ * style via FontVariation (minSdk 29 supports variable fonts).
+ * ========================================================================== */
+
+@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+private fun grotesk(weight: FontWeight) = Font(
+    R.font.space_grotesk,
+    weight = weight,
+    variationSettings = FontVariation.Settings(FontVariation.weight(weight.weight)),
+)
+
+val Grotesk = FontFamily(
+    grotesk(FontWeight.Normal),
+    grotesk(FontWeight.Medium),
+    grotesk(FontWeight.SemiBold),
+    grotesk(FontWeight.Bold),
+)
+
+val Mono = FontFamily(
+    Font(R.font.space_mono_regular, FontWeight.Normal),
+    Font(R.font.space_mono_bold, FontWeight.Bold),
+)
+
+// Tabular figures for the mono instrument readouts so numeric columns align.
+private const val TNUM = "\"tnum\" 1"
+
+val CaelumTypography = Typography(
+    // big temps "9°"
     displayLarge = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Black,
-        fontSize = 57.sp,
-        lineHeight = 64.sp,
-        letterSpacing = (-1).sp
+        fontFamily = Grotesk, fontWeight = FontWeight.Bold,
+        fontSize = 64.sp, lineHeight = 60.sp, letterSpacing = (-2).sp,
     ),
     displayMedium = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.ExtraBold,
-        fontSize = 45.sp,
-        lineHeight = 52.sp,
-        letterSpacing = (-0.5).sp
+        fontFamily = Grotesk, fontWeight = FontWeight.Bold,
+        fontSize = 45.sp, lineHeight = 48.sp, letterSpacing = (-1).sp,
     ),
     displaySmall = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.ExtraBold,
-        fontSize = 36.sp,
-        lineHeight = 44.sp,
-        letterSpacing = 0.sp
+        fontFamily = Grotesk, fontWeight = FontWeight.SemiBold,
+        fontSize = 34.sp, lineHeight = 38.sp, letterSpacing = (-0.6).sp,
     ),
-
     headlineLarge = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Black,
-        fontSize = 32.sp,
-        lineHeight = 40.sp,
-        letterSpacing = (-0.5).sp
+        fontFamily = Grotesk, fontWeight = FontWeight.Bold,
+        fontSize = 30.sp, lineHeight = 32.sp, letterSpacing = (-0.6).sp,
     ),
     headlineMedium = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.ExtraBold,
-        fontSize = 28.sp,
-        lineHeight = 36.sp,
-        letterSpacing = 0.sp
+        fontFamily = Grotesk, fontWeight = FontWeight.SemiBold,
+        fontSize = 22.sp, lineHeight = 26.sp, letterSpacing = (-0.3).sp,
     ),
     headlineSmall = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Bold,
-        fontSize = 24.sp,
-        lineHeight = 32.sp,
-        letterSpacing = 0.sp
+        fontFamily = Grotesk, fontWeight = FontWeight.SemiBold,
+        fontSize = 19.sp, lineHeight = 24.sp, letterSpacing = (-0.2).sp,
     ),
-
     titleLarge = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Bold,
-        fontSize = 22.sp,
-        lineHeight = 28.sp,
-        letterSpacing = 0.sp
+        fontFamily = Grotesk, fontWeight = FontWeight.SemiBold,
+        fontSize = 20.sp, lineHeight = 26.sp,
     ),
     titleMedium = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Bold,
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
-        letterSpacing = 0.15.sp
+        fontFamily = Grotesk, fontWeight = FontWeight.SemiBold,
+        fontSize = 17.sp, lineHeight = 22.sp,
     ),
     titleSmall = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Bold,
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
-        letterSpacing = 0.1.sp
+        fontFamily = Grotesk, fontWeight = FontWeight.Medium,
+        fontSize = 14.sp, lineHeight = 18.sp,
     ),
-
     bodyLarge = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Normal,
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
-        letterSpacing = 0.3.sp
+        fontFamily = Grotesk, fontWeight = FontWeight.Normal,
+        fontSize = 16.sp, lineHeight = 24.sp,
     ),
+    // color = inkDim at call sites
     bodyMedium = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Normal,
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
-        letterSpacing = 0.25.sp
+        fontFamily = Grotesk, fontWeight = FontWeight.Normal,
+        fontSize = 15.sp, lineHeight = 22.sp,
     ),
     bodySmall = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Medium,
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
-        letterSpacing = 0.4.sp
+        fontFamily = Grotesk, fontWeight = FontWeight.Normal,
+        fontSize = 13.sp, lineHeight = 18.sp,
     ),
-
+    // buttons
     labelLarge = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Bold,
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
-        letterSpacing = 0.1.sp
+        fontFamily = Grotesk, fontWeight = FontWeight.SemiBold,
+        fontSize = 15.sp, lineHeight = 18.sp,
     ),
+    // EYEBROW — uppercase, color inkFaint at call sites
     labelMedium = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Bold,
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
-        letterSpacing = 0.5.sp
+        fontFamily = Grotesk, fontWeight = FontWeight.SemiBold,
+        fontSize = 12.sp, lineHeight = 14.sp, letterSpacing = 1.6.sp,
     ),
+    // data readouts, tabular mono
     labelSmall = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Bold,
-        fontSize = 11.sp,
-        lineHeight = 14.sp,
-        letterSpacing = 0.5.sp
-    )
+        fontFamily = Mono, fontWeight = FontWeight.Bold,
+        fontSize = 13.sp, lineHeight = 16.sp, fontFeatureSettings = TNUM,
+    ),
 )
+
+// A bare mono style for inline instrument readouts that aren't a named role.
+val MonoReadout = TextStyle(
+    fontFamily = Mono, fontWeight = FontWeight.Normal,
+    fontSize = 13.sp, fontFeatureSettings = TNUM,
+)
+
+// Legacy alias — existing references compile while screens migrate.
+val Typography = CaelumTypography

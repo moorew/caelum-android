@@ -5,6 +5,26 @@ documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.7.0] - 2026-06-08
+### Added
+- **Caelum design system — "Deep Observatory".** A single visual language now
+  drives the whole app: one dark field, hairline-bordered cards (no drop
+  shadows), the Space Grotesk + Space Mono type ramp with tabular instrument
+  readouts, and a fixed brand palette carried through a `CaelumColors`
+  CompositionLocal so every surface reads from the same tokens.
+- **Red-Light night-vision mode.** Toggle from the home header or the drawer to
+  re-theme the entire UI to a monochrome deep-red palette and tint live/media
+  imagery red, preserving dark adaptation. The choice persists across launches.
+- **Aperture-C brand.** New Caelum mark, adaptive launcher icon (dark field +
+  focus star), and a branded cold-start splash.
+- **Reusable component kit** — cards, eyebrows, the LIVE pill, viewing badges,
+  metric cells, nav rows and buttons — plus a verdict-first home header and a
+  "Tonight's Viewing" verdict band under the live image.
+
+### Changed
+- Removed the light theme entirely and dropped Material You dynamic color —
+  Caelum is night-only (Deep Observatory + Red-Light).
+
 ## [3.6.1] - 2026-05-14
 ### Changed
 - **Coroutine and worker cleanup.** Network-heavy repository calls, weather

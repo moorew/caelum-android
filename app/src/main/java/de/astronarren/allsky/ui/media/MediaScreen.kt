@@ -355,6 +355,7 @@ private fun MediaTile(
                 contentDescription = date,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
+                colorFilter = de.astronarren.allsky.ui.theme.caelumImageColorFilter(),
                 placeholder = placeholderPainter,
                 error = placeholderPainter
             )

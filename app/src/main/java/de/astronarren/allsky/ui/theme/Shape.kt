@@ -5,14 +5,16 @@ import androidx.compose.material3.Shapes
 import androidx.compose.ui.unit.dp
 
 /**
- * Allsky shape scale — softer than M3 defaults to match the "glass / nebula"
- * surface treatment. Components should pull from these tokens rather than
- * hard-coding `RoundedCornerShape(N.dp)` inline.
+ * Caelum shape scale. Depth comes from field tiers + hairline borders — never
+ * drop shadows — so radii are the main expressive lever.
  */
-val AllskyShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(20.dp),
-    large = RoundedCornerShape(28.dp),
-    extraLarge = RoundedCornerShape(36.dp)
+val CaelumShapes = Shapes(
+    extraSmall = RoundedCornerShape(10.dp),
+    small = RoundedCornerShape(12.dp),   // chips
+    medium = RoundedCornerShape(16.dp),  // nav rows, inner tiles
+    large = RoundedCornerShape(22.dp),   // cards
+    extraLarge = RoundedCornerShape(28.dp),
 )
+
+// Legacy alias.
+val AllskyShapes = CaelumShapes

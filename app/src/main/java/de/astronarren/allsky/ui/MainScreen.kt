@@ -39,6 +39,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.*
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.Alignment
@@ -174,6 +177,7 @@ fun MainScreen(
         AllskyAuth.basicAuthHeader(allskyUsername, allskyPassword)
     }
     val skyAlertsEnabled by userPreferences.getSkyAlertsEnabledFlow().collectAsStateWithLifecycle(initialValue = false)
+    val redLightEnabled by userPreferences.getRedLightModeFlow().collectAsStateWithLifecycle(initialValue = false)
 
     // Sky-overlay state. Both flows always emit (the calibration flow falls
     // back to the inscribed-circle default), so the overlay Composable can
@@ -212,6 +216,10 @@ fun MainScreen(
         drawerContent = {
             SettingsPanel(
                 isOpen = isSettingsOpen,
+                redLightEnabled = redLightEnabled,
+                onRedLightToggle = { enabled ->
+                    scope.launch { userPreferences.setRedLightMode(enabled) }
+                },
                 skyAlertsEnabled = skyAlertsEnabled,
                 onSkyAlertsToggle = { enabled ->
                     scope.launch { userPreferences.setSkyAlertsEnabled(enabled) }
@@ -275,51 +283,20 @@ fun MainScreen(
                 // bleed through behind the media and overlap the viewer's
                 // close button.
                 if (!isViewerOpen) {
-                    CenterAlignedTopAppBar(
-                        title = {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(
-                                    if (stationName.isNotEmpty()) stationName.uppercase() else "ALLSKY",
-                                    style = MaterialTheme.typography.titleLarge.copy(
-                                        fontWeight = FontWeight.Black,
-                                        letterSpacing = if (stationName.isNotEmpty()) 2.sp else 8.sp,
-                                        fontSize = if (stationName.isNotEmpty()) 18.sp else 20.sp
-                                    ),
-                                    textAlign = TextAlign.Center,
-                                    maxLines = 1
-                                )
-                                if (allskyUrl.isNotEmpty()) {
-                                    Text(
-                                        allskyUrl.substringAfter("://").substringBefore("/").uppercase(),
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontWeight = FontWeight.Bold,
-                                            letterSpacing = 2.sp,
-                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
-                                        )
-                                    )
-                                }
+                    CaelumHomeHeader(
+                        stationName = stationName,
+                        hostUrl = allskyUrl,
+                        live = liveImageState.error == null && !liveImageState.imageUrl.isNullOrEmpty(),
+                        redLightEnabled = redLightEnabled,
+                        onMenu = {
+                            scope.launch {
+                                isSettingsOpen = true
+                                drawerState.open()
                             }
                         },
-                        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                            containerColor = Color.Transparent,
-                            titleContentColor = Color.White
-                        ),
-                        navigationIcon = {
-                            IconButton(
-                                onClick = {
-                                    scope.launch {
-                                        isSettingsOpen = true
-                                        drawerState.open()
-                                    }
-                                }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Menu,
-                                    contentDescription = "Menu",
-                                    tint = Color.White
-                                )
-                            }
-                        }
+                        onToggleRedLight = {
+                            scope.launch { userPreferences.setRedLightMode(!redLightEnabled) }
+                        },
                     )
                 }
             },
@@ -330,12 +307,14 @@ fun MainScreen(
             // Weather-driven gradients are intentionally close to the default
             // navy so the app keeps a single visual identity instead of
             // looking like a different app in every weather condition.
+            val caelum = LocalCaelum.current
             val weatherCondition = weatherUiState.weatherData?.second?.firstOrNull()?.weather?.firstOrNull()?.main ?: "Clear"
-            val backgroundColors = remember(weatherCondition, paletteColors) {
-                if (paletteColors != null && paletteColors!!.size >= 2) {
-                    paletteColors!!
-                } else {
-                    when (weatherCondition) {
+            val backgroundColors = remember(weatherCondition, paletteColors, redLightEnabled, caelum) {
+                when {
+                    // Red-Light: a flat deep-red field — never the navy/palette wash.
+                    redLightEnabled -> listOf(caelum.field, caelum.field2, caelum.field)
+                    paletteColors != null && paletteColors!!.size >= 2 -> paletteColors!!
+                    else -> when (weatherCondition) {
                         "Clear" -> listOf(DeepNavy, NightPurple, ClearNight)
                         "Clouds" -> listOf(Color(0xFF0B1224), Color(0xFF1A2440), Color(0xFF2B3656))
                         "Rain", "Drizzle", "Thunderstorm" -> listOf(Color(0xFF0A1626), Color(0xFF152A40), Color(0xFF1F3A58))
@@ -456,7 +435,8 @@ fun MainScreen(
                                                                     .build(),
                                                                 contentDescription = stringResource(R.string.live_allsky_image),
                                                                 modifier = Modifier.fillMaxSize(),
-                                                                contentScale = ContentScale.Crop
+                                                                contentScale = ContentScale.Crop,
+                                                                colorFilter = caelumImageColorFilter(),
                                                             )
                                                         } else {
                                                             Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.2f)), contentAlignment = Alignment.Center) {
@@ -493,53 +473,34 @@ fun MainScreen(
                                                         }
                                                     }
 
-                                                    Surface(
+                                                    LivePill(
                                                         modifier = Modifier
                                                             .align(Alignment.TopStart)
-                                                            .padding(24.dp),
-                                                        color = Color.Black.copy(alpha = 0.6f),
-                                                        shape = RoundedCornerShape(12.dp),
-                                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
-                                                    ) {
-                                                        Row(
-                                                            verticalAlignment = Alignment.CenterVertically,
-                                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
-                                                        ) {
-                                                            Box(
-                                                                modifier = Modifier
-                                                                    .size(8.dp)
-                                                                    .background(if (liveImageState.error == null) Color.Green else Color.Red, RoundedCornerShape(4.dp))
-                                                            )
-                                                            Spacer(modifier = Modifier.width(10.dp))
-                                                            Text(
-                                                                text = "LIVE",
-                                                                style = MaterialTheme.typography.labelMedium.copy(
-                                                                    fontWeight = FontWeight.Black,
-                                                                    letterSpacing = 2.sp
-                                                                ),
-                                                                color = Color.White
-                                                            )
-                                                        }
-                                                    }
+                                                            .padding(20.dp)
+                                                    )
 
-                                                    Surface(
-                                                        modifier = Modifier
-                                                            .align(Alignment.BottomEnd)
-                                                            .padding(24.dp),
-                                                        color = Color.Black.copy(alpha = 0.6f),
-                                                        shape = RoundedCornerShape(12.dp),
-                                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
-                                                    ) {
-                                                        Text(
+                                                    if (formatTime(liveImageState.lastUpdate).isNotEmpty()) {
+                                                        MonoChip(
                                                             text = formatTime(liveImageState.lastUpdate),
-                                                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                                            color = Color.White.copy(alpha = 0.9f),
-                                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                                                            modifier = Modifier
+                                                                .align(Alignment.BottomEnd)
+                                                                .padding(20.dp)
                                                         )
                                                     }
                                                 }
                                             }
                                         }
+
+                                        // Verdict band — the verdict-first IA's
+                                        // headline, directly under the live image.
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        TonightVerdictBand(
+                                            forecasts = weatherUiState.weatherData?.second ?: emptyList(),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 16.dp)
+                                                .padding(bottom = 6.dp),
+                                        )
                                     }
                                 }
                                 "BEST_VIEWING" -> {
@@ -743,6 +704,125 @@ fun MainScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * Verdict band — the headline of Direction A's verdict-first IA. Computes
+ * tonight's viewing rating from the forecast and shows it as an eyebrow +
+ * one-line reason + a role-coloured badge.
+ */
+@Composable
+private fun TonightVerdictBand(
+    forecasts: List<WeatherData>,
+    modifier: Modifier = Modifier,
+) {
+    val c = LocalCaelum.current
+    val rating = remember(forecasts) {
+        de.astronarren.allsky.data.SkyRater.rateNight(forecasts)
+    }
+    val (role, reason) = when (rating) {
+        SkyRating.EXCELLENT -> c.good to "Clear skies — excellent conditions tonight."
+        SkyRating.GOOD -> c.good to "Mostly clear — good viewing tonight."
+        SkyRating.FAIR -> c.fair to "Partly cloudy — fair viewing tonight."
+        SkyRating.POOR -> c.poor to "Overcast or wet — poor viewing tonight."
+        null -> c.inkFaint to "Not enough forecast data yet."
+    }
+    CaelumCard(
+        modifier = modifier,
+        tonal = true,
+        contentPadding = PaddingValues(16.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Eyebrow("Tonight's Viewing", accent = c.inkFaint)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = reason,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = c.inkDim,
+                )
+            }
+            if (rating != null) {
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = rating.label.uppercase(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = role,
+                    modifier = Modifier
+                        .clip(MaterialTheme.shapes.small)
+                        .background(role.copy(alpha = 0.15f))
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Caelum home header — burger on the left, a centred station block (live LED +
+ * station name + mono host URL), and the Red-Light night-vision toggle on the
+ * right. Draws its own status-bar inset since it replaces the M3 app bar.
+ */
+@Composable
+private fun CaelumHomeHeader(
+    stationName: String,
+    hostUrl: String,
+    live: Boolean,
+    redLightEnabled: Boolean,
+    onMenu: () -> Unit,
+    onToggleRedLight: () -> Unit,
+) {
+    val c = LocalCaelum.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CaelumIconButton(
+            icon = Icons.Default.Menu,
+            contentDescription = "Menu",
+            onClick = onMenu,
+        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(if (live) c.good else c.poor)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = if (stationName.isNotEmpty()) stationName else "CAELUM",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = c.ink,
+                    maxLines = 1,
+                    textAlign = TextAlign.Center,
+                )
+            }
+            if (hostUrl.isNotEmpty()) {
+                Text(
+                    text = hostUrl.substringAfter("://").substringBefore("/"),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = c.signal,
+                    maxLines = 1,
+                )
+            }
+        }
+        CaelumIconButton(
+            icon = Icons.Default.DarkMode,
+            contentDescription = "Toggle Red-Light mode",
+            onClick = onToggleRedLight,
+            tint = if (redLightEnabled) c.signal else c.inkDim,
+        )
     }
 }
 

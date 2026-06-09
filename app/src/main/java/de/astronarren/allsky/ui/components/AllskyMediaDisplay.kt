@@ -200,6 +200,7 @@ private fun MediaCard(
                 contentDescription = stringResource(R.string.media_from_date, media.date),
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
+                colorFilter = caelumImageColorFilter(),
                 placeholder = fallbackPainter,
                 error = fallbackPainter
             )
