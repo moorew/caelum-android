@@ -5,6 +5,45 @@ documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.8.0] - 2026-11-08
+### Fixed
+- **Allsky v2026.10 compatibility.** Allsky 2026 replaced HTTP Basic Auth with
+  a session login form, disabled web-server directory listings and moved its
+  media lists to an AJAX endpoint, so the app could no longer list any
+  timelapses, keograms, startrails, meteors or images. Caelum now logs in like
+  the WebUI does (CSRF token + session cookie, with a persistent "remember me"
+  cookie so the password is rarely re-sent), re-logs in automatically when the
+  session expires, and reads the new `uiutil.php?request=ListFileTypeContent`
+  and `list_images` data. Older Allsky versions still use the previous
+  scraper automatically.
+- Always logs in with "remember me": Allsky revokes *every* remember-me token
+  on a non-remembered login, which would have signed your browser out.
+- **Live image** now uses Allsky 2026's `/current/image.jpg` (it was falling
+  back to the resized Website copy).
+- A host literally named `allsky` (e.g. `http://allsky` on Tailscale) was
+  mangled to `http:/` by the `/allsky` Website-path stripping.
+- ViewModels are now retained across rotation instead of being re-created
+  (and leaking their refresh loops) on every configuration change.
+- The widget worker now gets the app's configured image loader even when the
+  app isn't open.
+
+### Performance
+- **Thumbnails instead of originals in every grid and row.** Tiles load
+  Allsky's server-made thumbnails (5–40 KB) instead of the full files
+  (1–4 MB stills). Timelapse tiles no longer download the entire video
+  (hundreds of MB) to extract a frame — `VideoFrameDecoder` is removed.
+- Full-screen viewer shows the thumbnail instantly while the original loads.
+- Each category loads independently and in parallel, so keograms appear in
+  ~0.1 s instead of waiting for the slowest list.
+- Lists are cached on disk and shown instantly on the next open, then
+  refreshed in the background. Past nights' frame lists are never
+  re-downloaded. The latest night's frame list (expensive for the Pi) is
+  refreshed at most every 10 minutes unless you pull to refresh.
+- Choosing a date in the media browser no longer reloads the home screen.
+- Live-image refreshes no longer churn the disk cache; image disk cache raised
+  to 300 MB; Coil shares the Allsky connection pool.
+- Video player enables decoder fallback for full-resolution timelapses.
+
 ## [3.7.0] - 2026-06-08
 ### Added
 - **Caelum design system — "Deep Observatory".** A single visual language now

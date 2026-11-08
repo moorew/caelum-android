@@ -1,342 +1,213 @@
 package de.astronarren.allsky.data
 
+import de.astronarren.allsky.network.AllskyClient
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 import org.jsoup.Jsoup
-import org.jsoup.Connection
+import java.io.File
+import java.net.URLEncoder
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-import kotlinx.coroutines.*
-import android.util.Base64
-import java.util.concurrent.CancellationException
 
+/**
+ * Lists archived Allsky media (timelapses, keograms, startrails, meteors and
+ * the raw frames for a night).
+ *
+ * Allsky v2026 (current) path — fast:
+ *  - `uiutil.php?request=ListFileTypeContent` returns a small HTML fragment
+ *    for one category with full + thumbnail URLs (~0.1 s, ~6 KB).
+ *  - `index.php?page=list_images&day=…` embeds the night's frames as JSON.
+ *    It is slow server-side (the Pi stats every frame — 3–11 s for ~12k
+ *    images), so those lists are cached on disk and never re-fetched for
+ *    nights that are over.
+ *
+ * Older Allsky versions fall back to [LegacyAllskyScraper].
+ *
+ * Every list is cached on disk so screens render instantly from the last
+ * known result while a refresh runs in the background.
+ */
 class AllskyRepository(
-    private val userPreferences: UserPreferences
+    private val cacheDir: File,
+    private val client: AllskyClient,
 ) {
-    /**
-     * Each media kind is parsed from one of these documents — we always try
-     * the portal `index.php?page=list_*` page first, then fall back to a
-     * direct directory listing if the portal page didn't yield any usable
-     * media. Both attempts are kept so the parser can union the results — on
-     * some Allsky installs the portal page only lists thumbnails for a single
-     * day while the directory listing has the full archive.
-     */
-    private data class FetchPair(
-        val portal: org.jsoup.nodes.Document?,
-        val directory: org.jsoup.nodes.Document?
-    )
+    private val legacy = LegacyAllskyScraper()
 
-    suspend fun getAllContent(date: String? = null): AllskyContent {
-        return withContext(Dispatchers.IO) {
-            try {
-                val baseUrlRaw = userPreferences.getAllskyUrl()
-                val baseUrl = baseUrlRaw.trim().trimEnd('/')
+    init { cacheDir.mkdirs() }
 
-                if (baseUrl.isEmpty()) {
-                    println("Debug: Allsky URL is empty")
-                    return@withContext AllskyContent(emptyList(), emptyList(), emptyList())
-                }
+    /** Null until we know; then whether the v2026 list endpoint exists. */
+    @Volatile private var modernApi: Pair<String, Boolean>? = null
 
-                if (!baseUrl.startsWith("http://", ignoreCase = true) &&
-                    !baseUrl.startsWith("https://", ignoreCase = true)) {
-                    println("Debug: Invalid URL format: $baseUrl")
-                    throw IllegalArgumentException("Invalid URL format: URL must start with http:// or https://")
-                }
-
-                val username = userPreferences.getUsername()
-                val password = userPreferences.getPassword()
-
-                fun createConnection(url: String): Connection {
-                    val conn = Jsoup.connect(url)
-                        .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                        .timeout(15000)
-                        .followRedirects(true)
-                        .ignoreHttpErrors(true)
-
-                    if (username.isNotEmpty() && password.isNotEmpty()) {
-                        val basicAuth = "Basic " + Base64.encodeToString("$username:$password".toByteArray(), Base64.NO_WRAP)
-                        conn.header("Authorization", basicAuth)
-                    }
-                    return conn
-                }
-
-                // Base URL for Jsoup (without credentials to avoid parsing issues)
-                val jsoupBaseUrl = baseUrl
-
-                // Base URL with credentials for Coil AsyncImage and ExoPlayer
-                val authBaseUrl = if (username.isNotEmpty() && password.isNotEmpty()) {
-                    val uri = android.net.Uri.parse(baseUrl)
-                    val builder = uri.buildUpon()
-                    val authority = "${android.net.Uri.encode(username)}:${android.net.Uri.encode(password)}@${uri.authority}"
-                    builder.encodedAuthority(authority).build().toString()
-                } else {
-                    baseUrl
-                }
-
-                println("Debug: Fetching content from Allsky: $jsoupBaseUrl")
-
-                /**
-                 * Fetch both the portal listing page and the raw directory
-                 * listing in parallel. We keep both — the parsers merge them
-                 * — because no single source is reliable across Allsky
-                 * versions and proxy configurations.
-                 */
-                suspend fun fetchPair(path: String, portalPage: String): FetchPair = coroutineScope {
-                    val portalDef = async {
-                        try {
-                            createConnection("$jsoupBaseUrl/index.php?page=$portalPage").get()
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            println("Debug: Portal page ($portalPage) fetch failed: ${e.message}")
-                            null
-                        }
-                    }
-                    val directoryDef = async {
-                        try {
-                            createConnection("$jsoupBaseUrl/$path").get()
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            println("Debug: Directory ($path) fetch failed: ${e.message}")
-                            null
-                        }
-                    }
-                    FetchPair(portalDef.await(), directoryDef.await())
-                }
-
-                val dayParam = date ?: "All"
-
-                val content = supervisorScope {
-                    val timelapseDef = async { fetchPair("videos/", "list_videos&day=$dayParam") }
-                    val keogramDef = async { fetchPair("keograms/", "list_keograms&day=$dayParam") }
-                    val startrailDef = async { fetchPair("startrails/", "list_startrails&day=$dayParam") }
-                    val meteorDef = async { fetchPair("meteors/", "list_meteors&day=$dayParam") }
-                    val imagesDef = async {
-                        if (date != null && date != "All") fetchPair("images/", "list_images&day=$date")
-                        else fetchPair("images/", "list_days")
-                    }
-
-                    val timelapses = parseFromPair(timelapseDef.await(), authBaseUrl, MediaKind.VIDEO, "videos")
-                    val keograms = parseFromPair(keogramDef.await(), authBaseUrl, MediaKind.KEOGRAM, "keograms")
-                    val startrails = parseFromPair(startrailDef.await(), authBaseUrl, MediaKind.STARTRAIL, "startrails")
-                    val meteors = parseFromPair(meteorDef.await(), authBaseUrl, MediaKind.METEOR, "meteors")
-                    var images = parseFromPair(imagesDef.await(), authBaseUrl, MediaKind.IMAGE, "images")
-
-                    // Some portals don't expose images directly — only a list
-                    // of available days. When that's all we got back, follow
-                    // the most recent day link and re-parse.
-                    val dayLink = images.firstOrNull { it.url.contains("day=") || it.url.endsWith("/") }
-                    if (dayLink != null && (images.isEmpty() || images.all { it.url.contains("page=list_images") || it.url.endsWith("/") })) {
-                        try {
-                            val fetchUrl = if (dayLink.url.contains("?")) {
-                                "$jsoupBaseUrl/index.php?" + dayLink.url.substringAfter("?")
-                            } else if (dayLink.url.startsWith("http")) {
-                                val uri = android.net.Uri.parse(dayLink.url)
-                                uri.buildUpon().encodedAuthority(uri.authority?.substringAfter("@")).build().toString()
-                            } else {
-                                "$jsoupBaseUrl/${dayLink.url.removePrefix("/")}"
-                            }
-                            val dayDoc = createConnection(fetchUrl).get()
-                            val dailyImages = parseFromPair(
-                                FetchPair(dayDoc, null), authBaseUrl, MediaKind.IMAGE, "images"
-                            )
-                            if (dailyImages.isNotEmpty()) images = dailyImages
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            println("Debug: Nested image fetch failed: ${e.message}")
-                        }
-                    }
-
-                    AllskyContent(
-                        timelapses = timelapses,
-                        keograms = keograms,
-                        startrails = startrails,
-                        images = images,
-                        meteors = meteors
-                    )
-                }
-
-                content
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                println("Debug: Error fetching allsky content: ${e.message}")
-                if (e is org.jsoup.HttpStatusException) {
-                    if (e.statusCode == 401 || e.statusCode == 403) {
-                        throw Exception("Authentication Required (401/403). Please check your Username and Password.")
-                    }
-                }
-                throw e
-            }
+    /** Last cached list for [category]/[day], or null if never fetched. */
+    suspend fun cached(category: MediaCategory, day: String = ALL): List<AllskyMedia>? =
+        withContext(Dispatchers.IO) {
+            val base = client.config().baseUrl
+            if (base.isEmpty()) return@withContext null
+            readCache(cacheFile(base, category, day))
         }
-    }
 
-    private enum class MediaKind { VIDEO, IMAGE, KEOGRAM, STARTRAIL, METEOR }
+    /** Age of the cached list in ms, or null if there is none. */
+    suspend fun cacheAgeMs(category: MediaCategory, day: String = ALL): Long? =
+        withContext(Dispatchers.IO) {
+            val base = client.config().baseUrl
+            if (base.isEmpty()) return@withContext null
+            val f = cacheFile(base, category, day)
+            if (f.exists()) System.currentTimeMillis() - f.lastModified() else null
+        }
 
     /**
-     * Parses both the portal listing and the directory listing, then unions
-     * the results so we don't lose entries that only appear in one of them.
-     * Parsing is intentionally permissive — when an Allsky install is hidden
-     * behind a custom theme or a stripped-down portal, the inferred
-     * directory path becomes the only source of truth.
+     * True when the cached list for this past night can't change any more, so
+     * a network round-trip (potentially 10 s for raw frames) is pointless.
      */
-    private fun parseFromPair(
-        pair: FetchPair,
-        baseUrl: String,
-        kind: MediaKind,
-        subDir: String
-    ): List<AllskyMedia> {
-        val results = mutableListOf<AllskyMedia>()
-        pair.portal?.let { results += parseDoc(it, baseUrl, kind, subDir, allowDayLinks = (kind == MediaKind.IMAGE)) }
-        pair.directory?.let { results += parseDoc(it, baseUrl, kind, subDir, allowDayLinks = (kind == MediaKind.IMAGE)) }
-        return results
-            .sortedByDescending { it.date }
-            .distinctBy { it.url }
-            .take(if (kind == MediaKind.IMAGE) 40 else 20)
+    fun isImmutable(day: String): Boolean {
+        val date = parseDay(day) ?: return false
+        // A night's folder is named for the evening; its keogram/timelapse are
+        // written the following morning. Two days back is safely final.
+        return date.isBefore(LocalDate.now().minusDays(1))
     }
 
-    private fun parseDoc(
-        doc: org.jsoup.nodes.Document,
-        baseUrl: String,
-        kind: MediaKind,
-        subDir: String,
-        allowDayLinks: Boolean
-    ): List<AllskyMedia> {
-        val elements = doc.select("a[href], img[src], source[src], video[src]")
-        val results = mutableListOf<AllskyMedia>()
-        val dayLinks = mutableListOf<AllskyMedia>()
-
-        for (element in elements) {
-            try {
-                var rawHref = element.attr("href").ifEmpty { element.attr("src") }.trim()
-                if (rawHref.isEmpty()) continue
-                // Query strings are valid on real media URLs (cache busters,
-                // signed URLs). Only drop the obvious admin/list-pagination
-                // shapes, never the media itself.
-                if (rawHref.startsWith("..") || rawHref.contains("delete") || rawHref.contains("edit")) continue
-                if (rawHref.contains("javascript:") || rawHref.startsWith("#")) continue
-
-                rawHref = rawHref.replace("thumbnails/", "")
-
-                val url = normalizeUrl(rawHref, baseUrl, subDir) ?: continue
-                val lowerUrl = url.lowercase()
-                val lowerFileName = url.substringAfterLast("/").substringBefore("?").lowercase()
-
-                val isDayLink = lowerUrl.contains("page=list_images") || lowerUrl.endsWith("/")
-                if (isDayLink) {
-                    if (allowDayLinks) dayLinks.add(AllskyMedia(extractDate(rawHref, element), url))
-                    continue
-                }
-
-                if (isJunk(lowerFileName)) continue
-
-                val matched = when (kind) {
-                    MediaKind.VIDEO -> isVideoExt(lowerUrl) && !lowerFileName.contains("allsky-logo")
-                    MediaKind.IMAGE -> isImageExt(lowerUrl) &&
-                        !lowerFileName.contains("keogram") &&
-                        !lowerFileName.contains("startrail")
-                    // Keograms and startrails are always images. We prefer
-                    // ones that include the kind in the URL (the portal does
-                    // this), but we still accept anything served from the
-                    // category's directory — that catches the “custom
-                    // theme strips the filename token” case.
-                    MediaKind.KEOGRAM -> isImageExt(lowerUrl) &&
-                        (lowerUrl.contains("keogram") || lowerUrl.contains("/keograms/") || lowerUrl.contains("keo"))
-                    MediaKind.STARTRAIL -> isImageExt(lowerUrl) &&
-                        (lowerUrl.contains("startrail") || lowerUrl.contains("/startrails/") || lowerUrl.contains("trail"))
-                    MediaKind.METEOR -> (isImageExt(lowerUrl) || isVideoExt(lowerUrl)) &&
-                        (lowerUrl.contains("/meteors/") || lowerUrl.contains("meteor"))
-                }
-
-                if (matched) {
-                    results.add(AllskyMedia(extractDate(rawHref, element), url))
-                }
-            } catch (_: Exception) {
-                // Best-effort — skip the bad element and keep going.
+    /**
+     * Fetch [category] from the server. [day] is `"All"` or `yyyyMMdd`. For
+     * [MediaCategory.IMAGES], `"All"` means "the most recent night".
+     */
+    suspend fun fetch(category: MediaCategory, day: String = ALL): List<AllskyMedia> =
+        withContext(Dispatchers.IO) {
+            val cfg = client.config()
+            val base = cfg.baseUrl
+            if (base.isEmpty()) throw IllegalStateException("Allsky URL not configured")
+            if (!base.startsWith("http://", true) && !base.startsWith("https://", true)) {
+                throw IllegalArgumentException("Invalid URL format: URL must start with http:// or https://")
             }
+
+            val root = client.webUiRoot(base)
+            val result = if (useModernApi(root)) {
+                if (category == MediaCategory.IMAGES) fetchImagesModern(root, day)
+                else fetchListModern(root, category, day)
+            } else {
+                legacy.fetchCategory(category, base, cfg.username, cfg.password, day.takeIf { it != ALL })
+            }
+            writeCache(cacheFile(base, category, day), result)
+            result
         }
 
-        return if (results.isEmpty() && allowDayLinks) dayLinks else results
+    /** Available night folders, newest first (`yyyyMMdd`). */
+    suspend fun fetchDays(): List<String> = withContext(Dispatchers.IO) {
+        val root = client.webUiRoot(client.config().baseUrl)
+        val html = client.getText("$root/index.php?page=list_days") ?: return@withContext emptyList()
+        DAY_LINK.findAll(html).map { it.groupValues[1] }.distinct().sortedDescending().toList()
     }
 
-    private fun isVideoExt(lowerUrl: String): Boolean =
-        lowerUrl.contains(".mp4") || lowerUrl.contains(".webm") ||
-        lowerUrl.contains(".mkv") || lowerUrl.contains(".mov") ||
-        lowerUrl.contains(".avi") || lowerUrl.contains(".m3u8")
+    // ---- v2026 API ---------------------------------------------------------
 
-    private fun isImageExt(lowerUrl: String): Boolean =
-        lowerUrl.contains(".jpg") || lowerUrl.contains(".jpeg") || lowerUrl.contains(".png")
-
-    private fun isJunk(lowerFileName: String): Boolean =
-        lowerFileName.contains("allsky-logo") ||
-        lowerFileName == "image.jpg" || lowerFileName == "image.png" ||
-        lowerFileName.contains("image-resize") ||
-        lowerFileName.contains("placeholder") ||
-        lowerFileName.contains("default") ||
-        lowerFileName.contains("logo")
-
-    private fun extractDate(href: String, element: org.jsoup.nodes.Element): String {
-        val specificDate = element.select("div.day-text").text()
-        if (specificDate.isNotEmpty()) return specificDate
-
-        val cleanedHref = href.substringAfterLast("/")
-        val datePattern = Regex("(\\d{4})[-_]?(\\d{2})[-_]?(\\d{2})")
-
-        val match = datePattern.find(cleanedHref)
-        if (match != null) {
-            val (year, month, day) = match.destructured
-            return "$year-$month-$day"
-        }
-
-        val text = element.text().trim()
-        val textMatch = datePattern.find(text)
-        if (textMatch != null) {
-            val (year, month, day) = textMatch.destructured
-            return "$year-$month-$day"
-        }
-
-        return cleanedHref.substringBeforeLast(".").ifEmpty { cleanedHref }
+    private suspend fun useModernApi(root: String): Boolean {
+        modernApi?.let { (r, ok) -> if (r == root) return ok }
+        // Cheapest call that exists only on v2026+: meteors list (usually tiny).
+        val probe = client.getText(listUrl(root, MediaCategory.METEORS, ALL), ajax = true)
+        val ok = probe != null && probe.contains("functions-listfiletype")
+        modernApi = root to ok
+        return ok
     }
 
-    private fun normalizeUrl(rawHref: String, baseUrl: String, subDir: String): String? {
-        val trimmedHref = rawHref.trim()
-        if (trimmedHref.contains("javascript:") || trimmedHref.startsWith("#")) return null
+    private fun listUrl(root: String, c: MediaCategory, day: String): String =
+        "$root/includes/uiutil.php?request=ListFileTypeContent" +
+            "&day=${enc(day)}&dir=${enc(c.dir)}&imageFileName=${enc(c.fileName)}" +
+            "&formalImageTypeName=${enc(c.formalName)}&type=${c.type}&listNames=0&useThumbnails=1"
 
-        if (trimmedHref.contains("page=list_")) {
-            return if (trimmedHref.startsWith("http")) trimmedHref else "${baseUrl.trimEnd('/')}/${trimmedHref.removePrefix("/")}"
+    private suspend fun fetchListModern(root: String, c: MediaCategory, day: String): List<AllskyMedia> {
+        val html = client.getText(listUrl(root, c, day), ajax = true)
+            ?: throw IllegalStateException("Allsky list endpoint not found")
+        val doc = Jsoup.parse(html, "$root/")
+        return doc.select("a.functions-listfiletype-item").mapNotNull { a ->
+            val full = a.attr("abs:data-download-url").ifEmpty { a.attr("abs:href") }
+            if (full.isEmpty() || full.contains("video_player.php")) return@mapNotNull null
+            val thumb = a.selectFirst("img")?.attr("src")
+                ?.takeIf { it.isNotEmpty() && !it.startsWith("data:") }
+                ?.let { a.selectFirst("img")!!.absUrl("src") }
+                ?.takeIf { it != full } // no real thumbnail — server echoed the full image
+            val dateEl = a.selectFirst(".functions-listfiletype-date")
+            val label = dateEl?.attr("data-listfiletype-day")?.takeIf { it.isNotEmpty() }?.let(::formatDay)
+                ?: dateEl?.attr("data-listfiletype-date")?.takeIf { it.isNotEmpty() }?.replace('T', ' ')
+                ?: DAY_IN_PATH.find(full)?.groupValues?.get(1)?.let(::formatDay)
+                ?: full.substringAfterLast('/')
+            AllskyMedia(label, full, thumb)
+        }.sortedByDescending { it.url }
+    }
+
+    private suspend fun fetchImagesModern(root: String, day: String): List<AllskyMedia> {
+        val target = if (day == ALL) {
+            fetchDays().firstOrNull() ?: return emptyList()
+        } else day
+        val html = client.getText("$root/index.php?page=list_images&day=${enc(target)}")
+            ?: return emptyList()
+        val json = IMAGE_ITEMS.find(html)?.groupValues?.get(1) ?: return emptyList()
+        val arr = JSONArray(json)
+        val out = ArrayList<AllskyMedia>(arr.length())
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            val name = o.optString("name").takeIf { it.isNotEmpty() } ?: continue
+            val ts = o.optString("timestamp").replace('T', ' ')
+            val encName = enc(name).replace("+", "%20")
+            out += AllskyMedia(
+                date = ts.ifEmpty { formatDay(target) },
+                url = "$root/images/$target/$encName",
+                thumbUrl = "$root/images/$target/thumbnails/$encName",
+            )
+        }
+        out.sortByDescending { it.url }
+        return out
+    }
+
+    // ---- disk cache --------------------------------------------------------
+
+    private fun cacheFile(base: String, c: MediaCategory, day: String) =
+        File(cacheDir, "${Integer.toHexString(base.hashCode())}_${c.key}_$day.json")
+
+    private fun readCache(f: File): List<AllskyMedia>? = try {
+        if (!f.exists()) null else {
+            val arr = JSONArray(f.readText())
+            List(arr.length()) { i ->
+                val o = arr.getJSONObject(i)
+                AllskyMedia(o.getString("d"), o.getString("u"), o.optString("t").ifEmpty { null })
+            }
+        }
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun writeCache(f: File, items: List<AllskyMedia>) {
+        try {
+            val arr = JSONArray()
+            for (m in items) arr.put(JSONObject().put("d", m.date).put("u", m.url).put("t", m.thumbUrl ?: ""))
+            val tmp = File(f.path + ".tmp")
+            tmp.writeText(arr.toString())
+            tmp.renameTo(f)
+        } catch (_: Exception) {
+            // Cache is best-effort.
+        }
+    }
+
+    fun clearCache() {
+        modernApi = null
+        cacheDir.listFiles()?.forEach { it.delete() }
+    }
+
+    companion object {
+        const val ALL = "All"
+        private val DAY_LINK = Regex("""page=list_images&(?:amp;)?day=(\d{8})""")
+        private val DAY_IN_PATH = Regex("""/(\d{8})/""")
+        private val IMAGE_ITEMS = Regex("""const imageItems = (\[.*?]);""", RegexOption.DOT_MATCHES_ALL)
+        private val DAY_FMT = DateTimeFormatter.ofPattern("yyyyMMdd")
+
+        private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
+
+        fun parseDay(day: String): LocalDate? = try {
+            LocalDate.parse(day, DAY_FMT)
+        } catch (_: Exception) {
+            null
         }
 
-        val lowerHref = trimmedHref.lowercase()
-        val isMedia = lowerHref.contains(".jpg") || lowerHref.contains(".png") || lowerHref.contains(".jpeg") ||
-                      lowerHref.contains(".mp4") || lowerHref.contains(".webm") ||
-                      lowerHref.contains(".mov") || lowerHref.contains(".mkv") ||
-                      lowerHref.contains(".m3u8") || lowerHref.contains(".avi") ||
-                      trimmedHref.endsWith("/")
-
-        if (!isMedia) return null
-
-        return when {
-            trimmedHref.startsWith("http") -> trimmedHref
-            trimmedHref.startsWith("/") -> {
-                val uri = android.net.Uri.parse(baseUrl)
-                val baseScheme = uri.scheme ?: "http"
-                val baseAuth = uri.encodedAuthority
-                val basePath = uri.path?.trimEnd('/') ?: ""
-
-                if (basePath.isNotEmpty() && trimmedHref.startsWith(basePath)) {
-                    "${baseScheme}://${baseAuth}${trimmedHref}"
-                } else {
-                    "${baseScheme}://${baseAuth}${basePath}/${trimmedHref.removePrefix("/")}"
-                }
-            }
-            else -> {
-                val path = trimmedHref.removePrefix("./")
-                if (path.startsWith("$subDir/")) {
-                    "${baseUrl.trimEnd('/')}/$path"
-                } else {
-                    "${baseUrl.trimEnd('/')}/$subDir/$path"
-                }
-            }
-        }
+        fun formatDay(day: String): String =
+            parseDay(day)?.toString() ?: day
     }
 }

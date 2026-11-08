@@ -23,7 +23,6 @@ import de.astronarren.allsky.ui.setup.SetupScreen
 import de.astronarren.allsky.ui.theme.AllskyTheme
 import de.astronarren.allsky.viewmodel.*
 import de.astronarren.allsky.data.WeatherRepository
-import de.astronarren.allsky.data.AllskyRepository
 import de.astronarren.allsky.utils.LanguageManager
 import de.astronarren.allsky.utils.NotificationHelper
 import de.astronarren.allsky.workers.WeatherWorker
@@ -32,19 +31,10 @@ import java.util.concurrent.TimeUnit
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import coil.Coil
-import coil.ImageLoader
-import coil.decode.VideoFrameDecoder
-import de.astronarren.allsky.network.AllskyAuthInterceptor
 import de.astronarren.allsky.ui.focus.FocusScreen
 import de.astronarren.allsky.ui.layout.LayoutEditorScreen
 import de.astronarren.allsky.ui.media.MediaScreen
 import de.astronarren.allsky.ui.settings.SettingsScreen
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import okhttp3.OkHttpClient
 
 class MainActivity : ComponentActivity() {
     private lateinit var weatherViewModel: WeatherViewModel
@@ -54,7 +44,12 @@ class MainActivity : ComponentActivity() {
     private lateinit var liveImageViewModel: LiveImageViewModel
     private lateinit var languageViewModel: LanguageViewModel
     private lateinit var languageManager: LanguageManager
-    private val imagePipelineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    @Suppress("UNCHECKED_CAST")
+    private inline fun <reified VM : androidx.lifecycle.ViewModel> vm(crossinline create: () -> VM): VM =
+        androidx.lifecycle.ViewModelProvider(this, object : androidx.lifecycle.ViewModelProvider.Factory {
+            override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T = create() as T
+        })[VM::class.java]
 
     /**
      * Set by notification PendingIntents (see [NotificationHelper.EXTRA_SCROLL_TO]).
@@ -74,7 +69,7 @@ class MainActivity : ComponentActivity() {
         }
         languageViewModel = LanguageViewModel(languageManager)
         
-        val userPreferences = UserPreferences(applicationContext)
+        val userPreferences = CaelumApp.from(this).userPreferences
         // Get WeatherService from provider
         val weatherService = WeatherApiProvider.provideWeatherService()
         
@@ -83,49 +78,21 @@ class MainActivity : ComponentActivity() {
             userPreferences = userPreferences
         )
         
-        val allskyRepository = AllskyRepository(userPreferences)
-        
-        weatherViewModel = WeatherViewModel(
-            weatherRepository = weatherRepository,
-            userPreferences = userPreferences
-        )
-        allskyViewModel = AllskyViewModel(allskyRepository, userPreferences)
-        imageViewerViewModel = ImageViewerViewModel()
-        setupViewModel = SetupViewModel(userPreferences)
-        liveImageViewModel = LiveImageViewModel(userPreferences)
-        
-        // Shared OkHttp client carrying the Basic Auth interceptor so every
-        // Coil request to the configured Allsky host is authenticated, with or
-        // without `user:pass@` embedded in the URL.
-        val okHttpClient = OkHttpClient.Builder()
-            .addInterceptor(AllskyAuthInterceptor(userPreferences, imagePipelineScope))
-            .build()
+        val app = CaelumApp.from(this)
 
-        val imageLoader = ImageLoader.Builder(applicationContext)
-            .okHttpClient(okHttpClient)
-            .components {
-                add(VideoFrameDecoder.Factory())
-            }
-            // Memory + disk cache so a second launch (or a scroll back up the
-            // list) shows thumbnails instantly. 25% of the JVM heap for memory
-            // (Coil's default but stated explicitly so future tuning is
-            // obvious) and a 100 MB disk slab — generous enough to cover a
-            // few weeks of timelapse/keogram thumbs without filling the user's
-            // storage.
-            .memoryCache {
-                coil.memory.MemoryCache.Builder(applicationContext)
-                    .maxSizePercent(0.25)
-                    .build()
-            }
-            .diskCache {
-                coil.disk.DiskCache.Builder()
-                    .directory(applicationContext.cacheDir.resolve("allsky_image_cache"))
-                    .maxSizeBytes(100L * 1024 * 1024)
-                    .build()
-            }
-            .respectCacheHeaders(false) // Allsky portals rarely set sensible cache headers; we control TTL via WorkManager refresh.
-            .build()
-        Coil.setImageLoader(imageLoader)
+        // ViewModels go through ViewModelProvider so they survive rotation /
+        // recreate() and are cleared (cancelling their refresh loops) when
+        // the Activity finishes, instead of leaking a new set each time.
+        weatherViewModel = vm {
+            WeatherViewModel(
+                weatherRepository = weatherRepository,
+                userPreferences = userPreferences
+            )
+        }
+        allskyViewModel = vm { AllskyViewModel(app.allskyRepository, app.allskyClient, userPreferences) }
+        imageViewerViewModel = vm { ImageViewerViewModel() }
+        setupViewModel = vm { SetupViewModel(userPreferences) }
+        liveImageViewModel = vm { LiveImageViewModel(userPreferences) }
 
         scheduleWeatherWorker()
 
@@ -261,7 +228,6 @@ class MainActivity : ComponentActivity() {
         if (::languageManager.isInitialized) {
             languageManager.close()
         }
-        imagePipelineScope.cancel()
         super.onDestroy()
     }
 

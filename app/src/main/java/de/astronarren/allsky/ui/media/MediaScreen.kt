@@ -38,8 +38,8 @@ import de.astronarren.allsky.ui.components.GlassCard
 import de.astronarren.allsky.ui.theme.DeepNavy
 import de.astronarren.allsky.ui.theme.NightPurple
 import de.astronarren.allsky.viewmodel.AllskyViewModel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import androidx.compose.runtime.saveable.rememberSaveable
+import de.astronarren.allsky.data.MediaCategory
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -53,24 +53,26 @@ fun MediaScreen(
     userPreferences: de.astronarren.allsky.data.UserPreferences,
     onNavigateBack: () -> Unit
 ) {
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var dateInput by remember { mutableStateOf("All") }
+    val category = remember(mediaType) { MediaCategory.fromKey(mediaType) ?: MediaCategory.TIMELAPSES }
+    val browse by viewModel.browse.collectAsStateWithLifecycle()
+    var dateInput by rememberSaveable { mutableStateOf("All") }
+    LaunchedEffect(category) { viewModel.browse(category, dateInput) }
     var showDatePicker by remember { mutableStateOf(false) }
     val datePickerState = rememberDatePickerState()
 
     var currentVideo by remember { mutableStateOf<String?>(null) }
-    var currentImage by remember { mutableStateOf<String?>(null) }
-    var isRefreshing by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-
-    val mediaItems = when (mediaType) {
-        "timelapses" -> uiState.timelapses
-        "keograms" -> uiState.keograms
-        "startrails" -> uiState.startrails
-        "meteors" -> uiState.meteors
-        "images" -> uiState.images
-        else -> emptyList()
-    }
+    var currentImage by remember { mutableStateOf<de.astronarren.allsky.viewmodel.AllskyMediaUiState?>(null) }
+    var pullRefreshing by remember { mutableStateOf(false) }
+    // Only show items that belong to this screen's category + date; the
+    // browse state is shared and may briefly hold the previous screen's list.
+    val current = browse.category == category && browse.day == dateInput
+    val mediaItems = if (current) browse.items else emptyList()
+    val isLoading = !current || browse.isLoading
+    val error = if (current) browse.error else null
+    LaunchedEffect(isLoading) { if (!isLoading) pullRefreshing = false }
+    // Never let the pull indicator outlive the load it triggered, even if the
+    // load finished before we observed it starting.
+    val showPullIndicator = pullRefreshing && isLoading
 
     if (showDatePicker) {
         DatePickerDialog(
@@ -81,7 +83,7 @@ fun MediaScreen(
                     datePickerState.selectedDateMillis?.let { millis ->
                         val sdf = SimpleDateFormat("yyyyMMdd", Locale.getDefault())
                         dateInput = sdf.format(Date(millis))
-                        viewModel.fetchContentForDate(dateInput)
+                        viewModel.browse(category, dateInput)
                     }
                 }) { Text("Select") }
             },
@@ -138,14 +140,10 @@ fun MediaScreen(
                     .padding(padding)
             ) {
                 PullToRefreshBox(
-                    isRefreshing = isRefreshing,
+                    isRefreshing = showPullIndicator,
                     onRefresh = {
-                        scope.launch {
-                            isRefreshing = true
-                            viewModel.fetchContentForDate(dateInput)
-                            delay(1000)
-                            isRefreshing = false
-                        }
+                        pullRefreshing = true
+                        viewModel.browse(category, dateInput, force = true)
                     },
                     modifier = Modifier.fillMaxSize()
                 ) {
@@ -164,7 +162,9 @@ fun MediaScreen(
                                 onClick = { showDatePicker = true },
                                 label = {
                                     Text(
-                                        if (dateInput == "All") "ALL DATES"
+                                        if (dateInput == "All") {
+                                            if (category == MediaCategory.IMAGES) "LATEST NIGHT" else "ALL DATES"
+                                        }
                                         else try {
                                             val inputSdf = SimpleDateFormat("yyyyMMdd", Locale.getDefault())
                                             val displaySdf = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
@@ -200,7 +200,7 @@ fun MediaScreen(
                                 AssistChip(
                                     onClick = {
                                         dateInput = "All"
-                                        viewModel.fetchContentForDate("All")
+                                        viewModel.browse(category, "All")
                                     },
                                     label = {
                                         Text(
@@ -236,13 +236,22 @@ fun MediaScreen(
                             }
                         }
 
+                        // Thin progress bar while refreshing over cached results.
+                        if (isLoading && mediaItems.isNotEmpty()) {
+                            LinearProgressIndicator(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).height(2.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = Color.Transparent,
+                            )
+                        }
+
                         AnimatedContent(
-                            targetState = uiState.isLoading to mediaItems.isEmpty(),
+                            targetState = isLoading to mediaItems.isEmpty(),
                             transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(300)) },
                             label = "MediaContentAnimation"
-                        ) { (isLoading, isEmpty) ->
+                        ) { (loadingNow, isEmpty) ->
                             when {
-                                isLoading && mediaItems.isEmpty() -> {
+                                loadingNow && isEmpty -> {
                                     Box(
                                         modifier = Modifier.fillMaxSize(),
                                         contentAlignment = Alignment.Center
@@ -252,11 +261,11 @@ fun MediaScreen(
                                         )
                                     }
                                 }
-                                uiState.error != null && mediaItems.isEmpty() -> {
+                                error != null && isEmpty -> {
                                     EmptyState(
                                         icon = Icons.Default.WarningAmber,
                                         title = "Couldn't load",
-                                        subtitle = uiState.error ?: "Unknown error"
+                                        subtitle = error
                                     )
                                 }
                                 isEmpty -> {
@@ -277,19 +286,18 @@ fun MediaScreen(
                                         verticalArrangement = Arrangement.spacedBy(12.dp),
                                         modifier = Modifier.fillMaxSize()
                                     ) {
-                                        items(mediaItems) { item ->
+                                        items(mediaItems, key = { it.url }) { item ->
                                             val isVideo = item.url.lowercase().run {
                                                 contains(".mp4") || contains(".webm") ||
                                                 contains(".mov") || contains(".mkv")
                                             }
                                             MediaTile(
-                                                url = item.url,
-                                                date = item.date,
+                                                item = item,
                                                 isVideo = isVideo,
                                                 mediaType = mediaType,
                                                 onClick = {
                                                     if (isVideo) currentVideo = item.url
-                                                    else currentImage = item.url
+                                                    else currentImage = item
                                                 }
                                             )
                                         }
@@ -302,7 +310,8 @@ fun MediaScreen(
 
                 if (currentImage != null) {
                     de.astronarren.allsky.ui.components.FullScreenImageViewer(
-                        imageUrl = currentImage!!,
+                        imageUrl = currentImage!!.url,
+                        thumbUrl = currentImage!!.thumbUrl,
                         userPreferences = userPreferences,
                         onDismiss = { currentImage = null }
                     )
@@ -322,8 +331,7 @@ fun MediaScreen(
 
 @Composable
 private fun MediaTile(
-    url: String,
-    date: String,
+    item: de.astronarren.allsky.viewmodel.AllskyMediaUiState,
     isVideo: Boolean,
     mediaType: String,
     onClick: () -> Unit
@@ -350,14 +358,12 @@ private fun MediaTile(
         }
 
         Box(modifier = Modifier.fillMaxSize().background(placeholderGradient)) {
-            AsyncImage(
-                model = url,
-                contentDescription = date,
+            de.astronarren.allsky.ui.components.MediaThumbnail(
+                media = item,
+                isVideo = isVideo,
+                fallback = placeholderPainter,
+                contentDescription = item.date,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-                colorFilter = de.astronarren.allsky.ui.theme.caelumImageColorFilter(),
-                placeholder = placeholderPainter,
-                error = placeholderPainter
             )
 
             // Bottom gradient for legibility — drawn once, no nested cards.
@@ -393,7 +399,7 @@ private fun MediaTile(
                     .padding(12.dp)
             ) {
                 Text(
-                    text = date,
+                    text = item.date,
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Black),
                     color = Color.White
                 )

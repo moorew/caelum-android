@@ -195,14 +195,12 @@ private fun MediaCard(
             } else {
                 rememberVectorPainter(if (isVideo || isMeteor) Icons.Default.PlayCircle else Icons.Default.Image)
             }
-            AsyncImage(
-                model = media.url,
+            MediaThumbnail(
+                media = media,
+                isVideo = isVideo,
+                fallback = fallbackPainter,
                 contentDescription = stringResource(R.string.media_from_date, media.date),
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-                colorFilter = caelumImageColorFilter(),
-                placeholder = fallbackPainter,
-                error = fallbackPainter
             )
             
             // Gradient Overlay for readability
@@ -264,4 +262,39 @@ private fun MediaCard(
             }
         }
     }
+}
+
+
+/**
+ * Grid/row tile image. Loads Allsky's server-side thumbnail (~5–40 KB) rather
+ * than the full file (1–4 MB stills, 100s of MB timelapses). If there is no
+ * thumbnail, stills fall back to the full image (Coil downsamples it to the
+ * tile size); videos just show the placeholder — decoding a frame from a
+ * remote video means downloading the whole file.
+ */
+@Composable
+fun MediaThumbnail(
+    media: AllskyMediaUiState,
+    isVideo: Boolean,
+    fallback: androidx.compose.ui.graphics.painter.Painter,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+) {
+    var thumbFailed by remember(media.thumbUrl) { mutableStateOf(false) }
+    val model: String? = when {
+        media.thumbUrl != null && !thumbFailed -> media.thumbUrl
+        isVideo -> null
+        else -> media.url
+    }
+    AsyncImage(
+        model = model,
+        contentDescription = contentDescription,
+        modifier = modifier,
+        contentScale = ContentScale.Crop,
+        colorFilter = caelumImageColorFilter(),
+        placeholder = fallback,
+        error = fallback,
+        fallback = fallback,
+        onError = { if (model != null && model == media.thumbUrl) thumbFailed = true },
+    )
 }

@@ -41,8 +41,8 @@ android {
         applicationId = "de.astronarren.allsky"
         minSdk = 29
         targetSdk = 35
-        versionCode = 64
-        versionName = "3.7.0"
+        versionCode = 65
+        versionName = "3.8.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -125,6 +125,8 @@ dependencies {
     
     // Testing dependencies
     testImplementation("junit:junit:4.13.2")
+    // Real org.json for JVM unit tests (android.jar only ships stubs).
+    testImplementation("org.json:json:20240303")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
     androidTestImplementation(platform("androidx.compose:compose-bom:2024.11.00"))

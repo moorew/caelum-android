@@ -147,7 +147,13 @@ fun VideoPlayer(
         }
         val dataSourceFactory = DefaultDataSource.Factory(context, httpFactory)
 
-        ExoPlayer.Builder(context)
+        // Allsky's default timelapse is full sensor resolution (e.g.
+        // 4056×3040), beyond many phones' primary H.264 decoder. Let
+        // ExoPlayer fall back to another decoder instead of failing.
+        val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(context)
+            .setEnableDecoderFallback(true)
+
+        ExoPlayer.Builder(context, renderersFactory)
             .setLoadControl(loadControl)
             .build().apply {
                 val mediaItem = MediaItem.fromUri(cleanUrl)

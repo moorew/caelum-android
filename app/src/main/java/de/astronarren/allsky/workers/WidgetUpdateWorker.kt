@@ -113,8 +113,9 @@ class WidgetUpdateWorker(
         allskyUrl = allskyUrl.trimEnd('/')
         
         // Find best path
-        val rootUrl = if (allskyUrl.endsWith("/allsky")) allskyUrl.substring(0, allskyUrl.length - 7) else allskyUrl
+        val rootUrl = de.astronarren.allsky.network.AllskyClient.stripWebsitePath(allskyUrl)
         val testPaths = listOf(
+            "$rootUrl/current/image.jpg",
             "$rootUrl/current/tmp/image.jpg",
             "$allskyUrl/image.jpg",
             "$allskyUrl/allsky/image.jpg"
@@ -137,6 +138,7 @@ class WidgetUpdateWorker(
         val requestBuilder = ImageRequest.Builder(context)
             .data(requestUrl)
             .allowHardware(false) // CRITICAL for RemoteViews bitmaps
+            .diskCachePolicy(coil.request.CachePolicy.DISABLED) // unique ?t= URL every run
             .size(512, 384) // Keep binder payload below RemoteViews transaction limits.
             
         if (username.isNotEmpty() && password.isNotEmpty()) {

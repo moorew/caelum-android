@@ -167,22 +167,19 @@ class LiveImageViewModel(
             }
         }
 
-        // Priority 1: /current/tmp/image.jpg on the install root (most common
-        // for `/allsky` installs)
-        val rootUrl = if (cleanUrl.endsWith("/allsky")) cleanUrl.dropLast(7) else cleanUrl
-        if (testPath("$rootUrl/current/tmp/image.jpg") == 200) {
-            return@withContext "$rootUrl/current/tmp/image.jpg"
-        }
-
-        // Priority 2: <base>/image.jpg
-        if (testPath("$cleanUrl/image.jpg") == 200) {
-            return@withContext "$cleanUrl/image.jpg"
-        }
-
-        // Priority 3: <base>/allsky/image.jpg (when user stored the install
-        // parent, not the /allsky directory)
-        if (!cleanUrl.endsWith("/allsky") && testPath("$cleanUrl/allsky/image.jpg") == 200) {
-            return@withContext "$cleanUrl/allsky/image.jpg"
+        val rootUrl = de.astronarren.allsky.network.AllskyClient.stripWebsitePath(cleanUrl)
+        val isWebsiteUrl = rootUrl != cleanUrl
+        val candidates = listOfNotNull(
+            // Allsky v2026+: ALLSKY_CURRENT_DIR is served at /current/
+            "$rootUrl/current/image.jpg",
+            // Allsky ≤ v2024.12: ~/allsky served at /current/
+            "$rootUrl/current/tmp/image.jpg",
+            "$cleanUrl/image.jpg",
+            // Allsky Website copy (resized, updated less often)
+            if (!isWebsiteUrl) "$cleanUrl/allsky/image.jpg" else null,
+        )
+        for (candidate in candidates) {
+            if (testPath(candidate) == 200) return@withContext candidate
         }
 
         null

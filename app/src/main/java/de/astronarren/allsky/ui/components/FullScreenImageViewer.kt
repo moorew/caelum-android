@@ -59,7 +59,8 @@ private data class ImageAuthState(
 fun FullScreenImageViewer(
     imageUrl: String,
     userPreferences: de.astronarren.allsky.data.UserPreferences,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    thumbUrl: String? = null,
 ) {
     val context = LocalContext.current
     val downloadHelper = remember { DownloadHelper(context, userPreferences) }
@@ -132,6 +133,9 @@ fun FullScreenImageViewer(
             AsyncImage(
                 model = ImageRequest.Builder(context)
                     .data(cleanImageUrl)
+                    // Show the grid thumbnail (already in memory) instantly
+                    // while the multi-MB original downloads.
+                    .placeholderMemoryCacheKey(thumbUrl)
                     .apply {
                         authState.header?.let {
                             setHeader("Authorization", it)

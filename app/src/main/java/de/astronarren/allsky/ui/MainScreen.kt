@@ -1,5 +1,7 @@
 package de.astronarren.allsky.ui
 
+import de.astronarren.allsky.data.MediaCategory
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -333,7 +335,7 @@ fun MainScreen(
                         scope.launch {
                             isRefreshing = true
                             if (apiKey.isNotEmpty()) weatherViewModel.updateWeather()
-                            if (allskyUrl.isNotEmpty()) allskyViewModel.fetchContentForDate()
+                            if (allskyUrl.isNotEmpty()) allskyViewModel.refresh(force = true)
                             delay(1200)
                             isRefreshing = false
                         }
@@ -393,6 +395,10 @@ fun MainScreen(
                                                             AsyncImage(
                                                                 model = coil.request.ImageRequest.Builder(LocalContext.current)
                                                                     .data(targetUrl)
+                                                                    // Each refresh has a new ?t= URL; writing 1–2 MB
+                                                                    // frames to disk every 30 s would evict the
+                                                                    // archive thumbnails we actually want cached.
+                                                                    .diskCachePolicy(coil.request.CachePolicy.DISABLED)
                                                                     .allowHardware(!samplePaletteOnThisLoad)
                                                                     .listener(
                                                                         onSuccess = { _, result ->
@@ -617,53 +623,53 @@ fun MainScreen(
                                 "TIMELAPSES" -> {
                                     AllskyMediaSection(
                                         title = "RECENT TIMELAPSES",
-                                        media = allskyUiState.timelapses,
+                                        media = allskyUiState.of(MediaCategory.TIMELAPSES).items,
                                         onMediaClick = { media -> currentVideo = media.url },
-                                        isLoading = allskyUiState.isLoading,
-                                        error = allskyUiState.error
+                                        isLoading = allskyUiState.of(MediaCategory.TIMELAPSES).isLoading,
+                                        error = allskyUiState.of(MediaCategory.TIMELAPSES).error
                                     )
                                 }
                                 "METEORS" -> {
                                     AllskyMediaSection(
                                         title = "METEOR RECORDINGS",
-                                        media = allskyUiState.meteors,
+                                        media = allskyUiState.of(MediaCategory.METEORS).items,
                                         onMediaClick = { media ->
                                             if (media.url.lowercase().contains(".mp4") ||
                                                 media.url.lowercase().contains(".webm")) {
                                                 currentVideo = media.url
                                             } else {
-                                                imageViewerViewModel.showImage(media.url)
+                                                imageViewerViewModel.showImage(media.url, media.thumbUrl)
                                             }
                                         },
-                                        isLoading = allskyUiState.isLoading,
-                                        error = allskyUiState.error
+                                        isLoading = allskyUiState.of(MediaCategory.METEORS).isLoading,
+                                        error = allskyUiState.of(MediaCategory.METEORS).error
                                     )
                                 }
                                 "IMAGES" -> {
                                     AllskyMediaSection(
                                         title = "DAILY RAW IMAGES",
-                                        media = allskyUiState.images,
-                                        onMediaClick = { media -> imageViewerViewModel.showImage(media.url) },
-                                        isLoading = allskyUiState.isLoading,
-                                        error = allskyUiState.error
+                                        media = allskyUiState.of(MediaCategory.IMAGES).items,
+                                        onMediaClick = { media -> imageViewerViewModel.showImage(media.url, media.thumbUrl) },
+                                        isLoading = allskyUiState.of(MediaCategory.IMAGES).isLoading,
+                                        error = allskyUiState.of(MediaCategory.IMAGES).error
                                     )
                                 }
                                 "KEOGRAMS" -> {
                                     AllskyMediaSection(
                                         title = "KEOGRAMS",
-                                        media = allskyUiState.keograms,
-                                        onMediaClick = { media -> imageViewerViewModel.showImage(media.url) },
-                                        isLoading = allskyUiState.isLoading,
-                                        error = allskyUiState.error
+                                        media = allskyUiState.of(MediaCategory.KEOGRAMS).items,
+                                        onMediaClick = { media -> imageViewerViewModel.showImage(media.url, media.thumbUrl) },
+                                        isLoading = allskyUiState.of(MediaCategory.KEOGRAMS).isLoading,
+                                        error = allskyUiState.of(MediaCategory.KEOGRAMS).error
                                     )
                                 }
                                 "STARTRAILS" -> {
                                     AllskyMediaSection(
                                         title = "STARTRAILS",
-                                        media = allskyUiState.startrails,
-                                        onMediaClick = { media -> imageViewerViewModel.showImage(media.url) },
-                                        isLoading = allskyUiState.isLoading,
-                                        error = allskyUiState.error
+                                        media = allskyUiState.of(MediaCategory.STARTRAILS).items,
+                                        onMediaClick = { media -> imageViewerViewModel.showImage(media.url, media.thumbUrl) },
+                                        isLoading = allskyUiState.of(MediaCategory.STARTRAILS).isLoading,
+                                        error = allskyUiState.of(MediaCategory.STARTRAILS).error
                                     )
                                 }
                                 "TONIGHT" -> {
@@ -690,6 +696,7 @@ fun MainScreen(
                 if (imageViewerState.isFullScreen && imageViewerState.currentImageUrl != null) {
                     FullScreenImageViewer(
                         imageUrl = imageViewerState.currentImageUrl!!,
+                        thumbUrl = imageViewerState.currentThumbUrl,
                         userPreferences = userPreferences,
                         onDismiss = { imageViewerViewModel.dismissImage() }
                     )
